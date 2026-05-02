@@ -1,0 +1,2303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="Track your Claude.ai conversation progress across projects">
+  <meta name="theme-color" content="#9333ea">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+  <title>Claude Progress Tracker</title>
+  <link rel="manifest" href="manifest.json">
+  <script src="https://apis.google.com/js/api.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --primary: #9333ea;
+      --primary-dark: #7e22ce;
+      --bg: #ffffff;
+      --bg-secondary: #f9fafb;
+      --text: #111827;
+      --text-secondary: #6b7280;
+      --border: #e5e7eb;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: var(--bg-secondary);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Header */
+    .header {
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: var(--shadow);
+    }
+
+    .header-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .last-sync {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      margin-right: 1rem;
+    }
+
+    .auth-container {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .user-profile {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem;
+      background: var(--bg-secondary);
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+    }
+
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    .user-email {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      max-width: 150px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sync-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      padding: 0.25rem 0.5rem;
+      background: var(--bg-secondary);
+      border-radius: 0.375rem;
+    }
+
+    .sync-status.syncing {
+      color: var(--warning);
+    }
+
+    .sync-status.synced {
+      color: var(--success);
+    }
+
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      min-height: 44px;
+    }
+
+    button:hover {
+      background: var(--primary-dark);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    button.secondary {
+      background: var(--bg-secondary);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    /* Main Content */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1.5rem 1rem;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 3rem;
+      color: var(--text-secondary);
+    }
+
+    .spinner {
+      border: 3px solid var(--border);
+      border-top: 3px solid var(--primary);
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1rem;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: 1.5rem;
+    }
+
+    .tab {
+      padding: 0.75rem 1.5rem;
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      color: var(--text-secondary);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      min-height: auto;
+    }
+
+    .tab:hover {
+      background: var(--bg-secondary);
+      color: var(--text);
+    }
+
+    .tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+      background: none;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Filters */
+    .filters {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .filter-group label {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .filter-group select {
+      padding: 0.5rem 2rem 0.5rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      background: var(--bg);
+      color: var(--text);
+      cursor: pointer;
+      min-height: 44px;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.75rem center;
+    }
+
+    /* Conversations List */
+    .conversations-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    /* Project Card */
+    .project-card {
+      background: var(--bg);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      box-shadow: var(--shadow);
+      border-left: 4px solid;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .project-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-lg);
+    }
+
+    .project-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .project-emoji {
+      font-size: 2rem;
+    }
+
+    .project-info {
+      flex: 1;
+    }
+
+    .project-name {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+
+    .project-stats {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    /* Conversations */
+    .conversations {
+      margin-top: 1rem;
+    }
+
+    .conversation-item {
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+      background: var(--bg-secondary);
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .conversation-item:hover {
+      border-color: var(--primary);
+      background: var(--bg);
+    }
+
+    .conversation-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      margin-bottom: 0.5rem;
+    }
+
+    .conversation-topic {
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 0.25rem;
+    }
+
+    .project-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.375rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: white;
+    }
+
+    .project-badge-emoji {
+      font-size: 0.875rem;
+    }
+
+    /* Priority Badges */
+    .priority-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.375rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-left: 0.5rem;
+      color: white;
+    }
+
+    .priority-urgent {
+      background: #ef4444;
+    }
+
+    .priority-high {
+      background: #f59e0b;
+    }
+
+    .priority-medium {
+      background: #eab308;
+    }
+
+    .priority-low {
+      background: #10b981;
+    }
+
+    .priority-parked {
+      background: #6b7280;
+    }
+
+    /* Quick Actions */
+    .quick-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .quick-actions button {
+      font-size: 0.75rem;
+      padding: 0.375rem 0.75rem;
+      min-height: auto;
+      background: var(--bg-secondary);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .quick-actions button:hover {
+      background: var(--bg);
+      border-color: var(--primary);
+    }
+
+    .quick-actions select {
+      font-size: 0.75rem;
+      padding: 0.375rem 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 0.375rem;
+      background: var(--bg);
+      cursor: pointer;
+    }
+
+    .conversation-item.archived {
+      opacity: 0.6;
+      border-left: 3px solid #6b7280;
+    }
+
+    /* Export Management */
+    .export-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .export-item {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .export-info {
+      flex: 1;
+    }
+
+    .export-name {
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+
+    .export-meta {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    .export-status {
+      padding: 0.25rem 0.75rem;
+      border-radius: 0.375rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .export-status.pending {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .export-status.processing {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .export-status.completed {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .export-status.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .queue-summary {
+      background: var(--bg-secondary);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      gap: 2rem;
+      flex-wrap: wrap;
+    }
+
+    .queue-stat {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .queue-stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .queue-stat-label {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    .conversation-date {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    .conversation-summary {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.75rem;
+    }
+
+    .progress-bar {
+      height: 8px;
+      background: var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--primary);
+      transition: width 0.3s;
+    }
+
+    .progress-text {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    .next-steps {
+      margin-top: 0.75rem;
+      padding: 0.75rem;
+      background: var(--bg);
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+    }
+
+    .next-steps h4 {
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+    }
+
+    .next-steps ul {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .next-steps li {
+      padding: 0.25rem 0;
+      padding-left: 1.25rem;
+      position: relative;
+    }
+
+    .next-steps li:before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: var(--primary);
+    }
+
+    .review-date {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.25rem;
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      margin-top: 0.5rem;
+    }
+
+    .review-date.overdue {
+      background: var(--error);
+      color: white;
+    }
+
+    .complete-btn {
+      margin-top: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: var(--success);
+      color: white;
+      border: none;
+      border-radius: 0.375rem;
+      cursor: pointer;
+      font-size: 0.875rem;
+      min-height: 36px;
+    }
+
+    .complete-btn:hover {
+      background: #059669;
+    }
+
+    .conversation-item.completed {
+      opacity: 0.5;
+      border-left: 3px solid var(--success);
+    }
+
+    .show-completed-toggle {
+      margin: 1rem 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+    }
+
+    .show-completed-toggle input {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: var(--text-secondary);
+    }
+
+    .empty-state h2 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+      color: var(--text);
+    }
+
+    /* Status Message */
+    .status-message {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: var(--primary);
+      color: white;
+      padding: 1rem 1.5rem;
+      border-radius: 0.5rem;
+      box-shadow: var(--shadow-lg);
+      z-index: 1000;
+      animation: slideIn 0.3s ease-out;
+    }
+
+    .status-message.error {
+      background: var(--error);
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateY(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    /* Settings Panel */
+    .settings-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 100%;
+      max-width: 400px;
+      background: var(--bg);
+      box-shadow: -4px 0 20px rgba(0, 0, 0, 0.1);
+      transform: translateX(100%);
+      transition: transform 0.3s;
+      z-index: 200;
+      overflow-y: auto;
+    }
+
+    .settings-panel.open {
+      transform: translateX(0);
+    }
+
+    .settings-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .settings-content {
+      padding: 1.5rem;
+    }
+
+    .settings-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .settings-group label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .settings-group input {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+    }
+
+    .settings-group small {
+      display: block;
+      color: var(--text-secondary);
+      margin-top: 0.25rem;
+      font-size: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-content">
+      <h1>🧠 Claude Progress Tracker</h1>
+      <div class="header-actions">
+        <div class="auth-container" id="authContainer">
+          <button id="signInBtn" style="display: none;">Sign in with Google</button>
+          <div id="userProfile" class="user-profile" style="display: none;">
+            <img id="userAvatar" class="user-avatar" src="" alt="User">
+            <div>
+              <div id="userName" style="font-size: 0.875rem; font-weight: 600;"></div>
+              <div id="userEmail" class="user-email"></div>
+            </div>
+          </div>
+          <span class="sync-status" id="syncStatus" style="display: none;">
+            <span id="syncText">Synced</span>
+          </span>
+        </div>
+        <span class="last-sync" id="lastSync">Never synced</span>
+        <button id="refreshBtn" title="Refresh data">🔄 Refresh</button>
+        <button class="secondary" id="settingsBtn" title="Settings">⚙️</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="container">
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Loading your projects...</p>
+    </div>
+
+    <!-- Tabs (shown when signed in) -->
+    <div id="tabs-container" style="display: none;">
+      <div class="tabs">
+        <button class="tab active" data-tab="conversations">📊 My Conversations</button>
+        <button class="tab" data-tab="exports">📦 Process Exports</button>
+      </div>
+    </div>
+
+    <!-- Tab 1: Conversations -->
+    <div id="tab-conversations" class="tab-content active" style="display: none;">
+      <div id="content" style="display: none;">
+        <div class="filters">
+        <div class="filter-group">
+          <label for="projectFilter">Project:</label>
+          <select id="projectFilter">
+            <option value="all">All Projects</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="priorityFilter">Priority:</label>
+          <select id="priorityFilter">
+            <option value="all">All Priorities</option>
+            <option value="urgent">🔴 Urgent</option>
+            <option value="high">🟠 High</option>
+            <option value="medium">🟡 Medium</option>
+            <option value="low">🟢 Low</option>
+            <option value="parked">⏸️ Parked</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="sortBy">Sort:</label>
+          <select id="sortBy">
+            <option value="smart">Smart (New + Priority)</option>
+            <option value="date">Last Updated</option>
+            <option value="priority">Priority</option>
+            <option value="progress">Progress %</option>
+          </select>
+        </div>
+        <div class="filter-group" style="flex: 1; min-width: 200px;">
+          <label for="searchBox">Search:</label>
+          <input type="text" id="searchBox" placeholder="Search conversations..." style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-secondary); color: var(--text);">
+        </div>
+        <div class="show-completed-toggle">
+          <input type="checkbox" id="showCompleted" checked>
+          <label for="showCompleted">Show completed</label>
+        </div>
+        <div class="show-completed-toggle">
+          <input type="checkbox" id="hideEmpty" checked>
+          <label for="hideEmpty">Hide 0% progress</label>
+        </div>
+        <div class="show-completed-toggle">
+          <input type="checkbox" id="showArchived">
+          <label for="showArchived">Show archived</label>
+        </div>
+        </div>
+        <div id="conversationsList" class="conversations-list"></div>
+      </div>
+
+      <!-- Empty state for conversations tab -->
+      <div id="emptyState" class="empty-state" style="display: none;"></div>
+    </div>
+
+    <!-- Tab 2: Exports -->
+      <div id="tab-exports" class="tab-content">
+        <div class="queue-summary">
+          <div class="queue-stat">
+            <div class="queue-stat-value" id="queuePending">0</div>
+            <div class="queue-stat-label">Pending</div>
+          </div>
+          <div class="queue-stat">
+            <div class="queue-stat-value" id="queueProcessing">0</div>
+            <div class="queue-stat-label">Processing</div>
+          </div>
+          <div class="queue-stat">
+            <div class="queue-stat-value" id="queueCompleted">0</div>
+            <div class="queue-stat-label">Completed</div>
+          </div>
+        </div>
+
+        <h3 style="margin-bottom: 1rem;">Available Export Files</h3>
+        <div id="exportsList" class="export-list">
+          <p style="color: var(--text-secondary); text-align: center; padding: 2rem;">Loading exports...</p>
+        </div>
+    </div>
+
+    <!-- Sign in prompt (shown when not authenticated) -->
+    <div id="signInPrompt" class="empty-state" style="display: none;">
+      <h2>🔒 Sign In Required</h2>
+      <p>Sign in with Google to access your private progress tracker data.</p>
+      <p style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-secondary);">Your conversations and progress are stored privately in Google Drive.</p>
+    </div>
+  </main>
+
+  <!-- Settings Panel -->
+  <div id="settingsPanel" class="settings-panel">
+    <div class="settings-header">
+      <h2>Settings</h2>
+      <button class="secondary" id="closeSettings">✕</button>
+    </div>
+    <div class="settings-content">
+      <div class="settings-group">
+        <label for="oauthClientId">Google OAuth Client ID</label>
+        <input type="text" id="oauthClientId" placeholder="Enter OAuth 2.0 Client ID">
+        <small>Get this from Google Cloud Console → APIs & Services → Credentials</small>
+      </div>
+      <div class="settings-group">
+        <label for="driveFolderId">Google Drive Folder ID</label>
+        <input type="text" id="driveFolderId" placeholder="Enter folder ID for user data">
+        <small>Folder where user-data.json and projects.json are stored</small>
+      </div>
+      <div class="settings-group">
+        <label for="driveFileId">Projects.json File ID (Optional)</label>
+        <input type="text" id="driveFileId" placeholder="Enter Google Drive file ID">
+        <small>Direct link to projects.json (fallback if not using folder)</small>
+      </div>
+      <button id="saveSettings">Save Settings</button>
+      <button class="secondary" id="signOutBtn" style="margin-top: 1rem; display: none;">Sign Out</button>
+      <button class="secondary" id="clearCache" style="margin-top: 1rem;">Clear Cache</button>
+    </div>
+  </div>
+
+  <script>
+    // Service Worker Registration
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js')
+        .then(() => console.log('Service Worker registered'))
+        .catch(err => console.error('Service Worker registration failed:', err));
+    }
+
+    // App State
+    const state = {
+      projects: [],
+      lastSync: null,
+      fileId: localStorage.getItem('driveFileId') || '',
+      oauthClientId: localStorage.getItem('oauthClientId') || '',
+      driveFolderId: localStorage.getItem('driveFolderId') || '',
+      accessToken: null,
+      userInfo: null,
+      userData: JSON.parse(localStorage.getItem('userData') || '{}'),
+      completedConversations: JSON.parse(localStorage.getItem('completedConversations') || '{}'),
+      showCompleted: localStorage.getItem('showCompleted') !== 'false',
+      hideEmpty: localStorage.getItem('hideEmpty') !== 'false',
+      showArchived: localStorage.getItem('showArchived') === 'true',
+      selectedProject: 'all',
+      selectedPriority: 'all',
+      sortBy: localStorage.getItem('sortBy') || 'smart',
+      searchQuery: '',
+      queue: { queue: [] },
+    };
+
+    // DOM Elements
+    const loadingEl = document.getElementById('loading');
+    const tabsContainerEl = document.getElementById('tabs-container');
+    const tabConversationsEl = document.getElementById('tab-conversations');
+    const tabExportsEl = document.getElementById('tab-exports');
+    const contentEl = document.getElementById('content');
+    const emptyStateEl = document.getElementById('emptyState');
+    const signInPromptEl = document.getElementById('signInPrompt');
+    const conversationsListEl = document.getElementById('conversationsList');
+    const projectFilterEl = document.getElementById('projectFilter');
+    const priorityFilterEl = document.getElementById('priorityFilter');
+    const sortByEl = document.getElementById('sortBy');
+    const searchBoxEl = document.getElementById('searchBox');
+    const lastSyncEl = document.getElementById('lastSync');
+    const settingsPanelEl = document.getElementById('settingsPanel');
+    const driveFileIdInput = document.getElementById('driveFileId');
+    const oauthClientIdInput = document.getElementById('oauthClientId');
+    const driveFolderIdInput = document.getElementById('driveFolderId');
+    const signInBtn = document.getElementById('signInBtn');
+    const signOutBtn = document.getElementById('signOutBtn');
+    const userProfile = document.getElementById('userProfile');
+    const syncStatus = document.getElementById('syncStatus');
+
+    // Load config from config.json
+    async function loadConfig() {
+      try {
+        const response = await fetch('config.json', { cache: 'no-store' });
+        if (response.ok) {
+          const config = await response.json();
+
+          // Use config values if they exist and localStorage is empty
+          if (config.oauthClientId && !localStorage.getItem('oauthClientId')) {
+            state.oauthClientId = config.oauthClientId;
+          }
+          if (config.driveFolderId && !localStorage.getItem('driveFolderId')) {
+            state.driveFolderId = config.driveFolderId;
+          }
+
+          // Always override with config if it has values (config takes priority)
+          if (config.oauthClientId) {
+            state.oauthClientId = config.oauthClientId;
+          }
+          if (config.driveFolderId) {
+            state.driveFolderId = config.driveFolderId;
+          }
+
+          console.log('Config loaded from config.json');
+        }
+      } catch (error) {
+        console.log('No config.json found, using localStorage values');
+      }
+    }
+
+    // Initialize
+    async function init() {
+      // Load config first
+      await loadConfig();
+
+      // Update UI with current values
+      driveFileIdInput.value = state.fileId;
+      oauthClientIdInput.value = state.oauthClientId;
+      driveFolderIdInput.value = state.driveFolderId;
+      document.getElementById('showCompleted').checked = state.showCompleted;
+      document.getElementById('hideEmpty').checked = state.hideEmpty;
+      document.getElementById('showArchived').checked = state.showArchived;
+      sortByEl.value = state.sortBy;
+
+      // Initialize Google API
+      await initGoogleAuth();
+
+      // Load projects
+      await loadProjects();
+    }
+
+    // ============================================
+    // GOOGLE OAUTH & DRIVE API (Redirect-based)
+    // ============================================
+
+    // Parse OAuth token from URL hash (after redirect back from Google)
+    function parseOAuthToken() {
+      const hash = window.location.hash.substring(1);
+      if (!hash) return null;
+
+      const params = {};
+      hash.split('&').forEach(param => {
+        const [key, value] = param.split('=');
+        params[decodeURIComponent(key)] = decodeURIComponent(value);
+      });
+
+      if (params.access_token) {
+        console.log('OAuth token found in URL');
+        // Clear the hash from URL
+        window.history.replaceState(null, null, window.location.pathname + window.location.search);
+        return params;
+      }
+
+      return null;
+    }
+
+    // Initialize Google OAuth (Redirect-based)
+    async function initGoogleAuth() {
+      if (!state.oauthClientId) {
+        console.log('No OAuth Client ID configured');
+        signInBtn.style.display = 'block';
+        signInBtn.disabled = true;
+        signInBtn.textContent = 'Configure OAuth in Settings';
+        return;
+      }
+
+      // Check if we're returning from OAuth redirect
+      const oauthParams = parseOAuthToken();
+      if (oauthParams) {
+        await handleOAuthCallback(oauthParams);
+        return;
+      }
+
+      // Wait for Google Drive API to load
+      await new Promise(resolve => {
+        const checkGapi = setInterval(() => {
+          if (window.gapi) {
+            clearInterval(checkGapi);
+            resolve();
+          }
+        }, 100);
+      });
+
+      // Load Drive API
+      await new Promise((resolve, reject) => {
+        gapi.load('client', async () => {
+          try {
+            await gapi.client.init({
+              discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+            });
+            console.log('Drive API loaded');
+            resolve();
+          } catch (error) {
+            console.error('Failed to load Drive API:', error);
+            reject(error);
+          }
+        });
+      });
+
+      // Check if we have a stored token
+      const storedToken = localStorage.getItem('accessToken');
+      const tokenExpiry = localStorage.getItem('tokenExpiry');
+
+      if (storedToken && tokenExpiry && Date.now() < parseInt(tokenExpiry)) {
+        state.accessToken = storedToken;
+        gapi.client.setToken({ access_token: state.accessToken });
+
+        // Verify token is still valid
+        const userInfoValid = await loadUserInfo();
+        if (userInfoValid) {
+          updateAuthUI(true);
+          await loadUserDataFromDrive();
+        } else {
+          // Token invalid, clear it
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('tokenExpiry');
+          updateAuthUI(false);
+        }
+      } else {
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('tokenExpiry');
+        updateAuthUI(false);
+      }
+    }
+
+    // Handle OAuth callback after redirect
+    async function handleOAuthCallback(params) {
+      if (params.error) {
+        console.error('OAuth error:', params.error);
+        showMessage('Sign in failed: ' + params.error, true);
+        updateAuthUI(false);
+        return;
+      }
+
+      const accessToken = params.access_token;
+      const expiresIn = parseInt(params.expires_in) || 3600;
+
+      state.accessToken = accessToken;
+      localStorage.setItem('accessToken', accessToken);
+      localStorage.setItem('tokenExpiry', (Date.now() + (expiresIn * 1000)).toString());
+
+      // Wait for Drive API to load
+      await new Promise(resolve => {
+        const checkGapi = setInterval(() => {
+          if (window.gapi) {
+            clearInterval(checkGapi);
+            resolve();
+          }
+        }, 100);
+      });
+
+      await new Promise((resolve, reject) => {
+        gapi.load('client', async () => {
+          try {
+            await gapi.client.init({
+              discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+            });
+            gapi.client.setToken({ access_token: accessToken });
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        });
+      });
+
+      await loadUserInfo();
+      updateAuthUI(true);
+      await loadUserDataFromDrive();
+      await loadProjects();
+      showMessage('Signed in successfully!');
+    }
+
+    // Sign in handler (redirect to Google OAuth)
+    function handleSignIn() {
+      if (!state.oauthClientId) {
+        showMessage('Please configure OAuth Client ID in Settings', true);
+        settingsPanelEl.classList.add('open');
+        return;
+      }
+
+      // Build OAuth URL
+      const redirectUri = window.location.origin + window.location.pathname;
+      const scope = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
+
+      const oauthUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+        client_id: state.oauthClientId,
+        redirect_uri: redirectUri,
+        response_type: 'token',
+        scope: scope,
+        include_granted_scopes: 'true',
+        state: 'pass-through-value'
+      }).toString();
+
+      console.log('Redirecting to OAuth:', oauthUrl);
+
+      // Redirect to Google OAuth
+      window.location.href = oauthUrl;
+    }
+
+    // Load user info (returns true if successful, false if token invalid)
+    async function loadUserInfo() {
+      try {
+        const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: { Authorization: `Bearer ${state.accessToken}` }
+        });
+
+        if (response.status === 401) {
+          // Token is invalid/expired
+          console.log('Token expired, clearing auth state');
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('tokenExpiry');
+          state.accessToken = null;
+          state.userInfo = null;
+          return false;
+        }
+
+        if (response.ok) {
+          state.userInfo = await response.json();
+          console.log('User info loaded:', state.userInfo);
+          return true;
+        }
+
+        return false;
+      } catch (error) {
+        console.error('Failed to load user info:', error);
+        return false;
+      }
+    }
+
+    // Sign out handler
+    function handleSignOut() {
+      state.accessToken = null;
+      state.userInfo = null;
+      state.userData = {};
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('tokenExpiry');
+      gapi.client.setToken(null);
+      updateAuthUI(false);
+      showMessage('Signed out successfully');
+    }
+
+    // Update auth UI
+    function updateAuthUI(isSignedIn) {
+      if (isSignedIn && state.userInfo) {
+        signInBtn.style.display = 'none';
+        userProfile.style.display = 'flex';
+        signOutBtn.style.display = 'block';
+        syncStatus.style.display = 'inline-flex';
+
+        document.getElementById('userAvatar').src = state.userInfo.picture || '';
+        document.getElementById('userName').textContent = state.userInfo.name || '';
+        document.getElementById('userEmail').textContent = state.userInfo.email || '';
+      } else {
+        signInBtn.style.display = 'block';
+        signInBtn.disabled = !state.oauthClientId;
+        signInBtn.textContent = state.oauthClientId ? 'Sign in with Google' : 'Configure OAuth in Settings';
+        userProfile.style.display = 'none';
+        signOutBtn.style.display = 'none';
+        syncStatus.style.display = 'none';
+      }
+    }
+
+    // Set sync status
+    function setSyncStatus(status) {
+      const syncStatusEl = document.getElementById('syncStatus');
+      const syncTextEl = document.getElementById('syncText');
+
+      syncStatusEl.className = 'sync-status';
+
+      if (status === 'syncing') {
+        syncStatusEl.classList.add('syncing');
+        syncTextEl.textContent = 'Syncing...';
+      } else if (status === 'synced') {
+        syncStatusEl.classList.add('synced');
+        syncTextEl.textContent = '✓ Synced';
+      } else if (status === 'error') {
+        syncStatusEl.classList.add('error');
+        syncTextEl.textContent = '✗ Error';
+      }
+    }
+
+    // Load user data from Drive (email-specific)
+    async function loadUserDataFromDrive() {
+      if (!state.accessToken || !state.driveFolderId || !state.userInfo) {
+        console.log('Cannot load user data: missing token, folder ID, or user info');
+        return;
+      }
+
+      try {
+        setSyncStatus('syncing');
+
+        // Check if Drive API is ready
+        if (!gapi.client.drive) {
+          console.log('Drive API not ready yet, skipping user data load');
+          state.userData = {};
+          setSyncStatus('synced');
+          return;
+        }
+
+        // Search for user-data-{email}.json in the folder
+        const userEmail = state.userInfo.email;
+        const fileName = `user-data-${userEmail}.json`;
+        const response = await gapi.client.drive.files.list({
+          q: `name='${fileName}' and '${state.driveFolderId}' in parents and trashed=false`,
+          fields: 'files(id, name)',
+        });
+
+        if (response && response.result && response.result.files && response.result.files.length > 0) {
+          const fileId = response.result.files[0].id;
+
+          // Download file content
+          const fileResponse = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+            { headers: { Authorization: `Bearer ${state.accessToken}` } }
+          );
+
+          if (fileResponse.ok) {
+            state.userData = await fileResponse.json();
+            console.log('User data loaded from Drive:', state.userData);
+            setSyncStatus('synced');
+          }
+        } else {
+          // File doesn't exist - create it for new user
+          console.log(`user-data-${state.userInfo.email}.json not found, creating for new user`);
+          state.userData = {};
+          await saveUserDataToDrive(); // Create the file
+          setSyncStatus('synced');
+        }
+      } catch (error) {
+        console.error('Error loading user data:', error);
+        setSyncStatus('error');
+        // Don't show error message, just log it - file might not exist yet
+        state.userData = {};
+      }
+    }
+
+    // Save user data to Drive (email-specific)
+    async function saveUserDataToDrive() {
+      if (!state.accessToken || !state.driveFolderId || !state.userInfo) {
+        console.log('Cannot save user data: missing token, folder ID, or user info');
+        return false;
+      }
+
+      try {
+        setSyncStatus('syncing');
+
+        const userEmail = state.userInfo.email;
+        const fileName = `user-data-${userEmail}.json`;
+
+        const content = JSON.stringify(state.userData, null, 2);
+        const blob = new Blob([content], { type: 'application/json' });
+
+        // Check if file exists
+        const searchResponse = await gapi.client.drive.files.list({
+          q: `name='${fileName}' and '${state.driveFolderId}' in parents and trashed=false`,
+          fields: 'files(id)',
+        });
+
+        let fileId = null;
+        if (searchResponse.result.files && searchResponse.result.files.length > 0) {
+          fileId = searchResponse.result.files[0].id;
+        }
+
+        const metadata = {
+          name: fileName,
+          mimeType: 'application/json',
+        };
+
+        if (!fileId) {
+          metadata.parents = [state.driveFolderId];
+        }
+
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        form.append('file', blob);
+
+        const url = fileId
+          ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
+          : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+
+        const response = await fetch(url, {
+          method: fileId ? 'PATCH' : 'POST',
+          headers: { Authorization: `Bearer ${state.accessToken}` },
+          body: form,
+        });
+
+        if (response.ok) {
+          console.log('User data saved to Drive');
+          setSyncStatus('synced');
+          return true;
+        } else {
+          throw new Error('Failed to save file');
+        }
+      } catch (error) {
+        console.error('Error saving user data:', error);
+        setSyncStatus('error');
+        showMessage('Failed to save to Drive', true);
+        return false;
+      }
+    }
+
+    // Merge user data with conversations
+    function mergeUserData() {
+      if (!state.userData || Object.keys(state.userData).length === 0) {
+        return;
+      }
+
+      // Merge user data into conversations
+      for (const project of state.projects) {
+        if (project.conversations) {
+          for (const conv of project.conversations) {
+            const userData = state.userData[conv.uuid];
+            if (userData) {
+              conv.priority = userData.priority || 'medium';
+              conv.archived = userData.archived || false;
+              conv.notes = userData.notes || '';
+              conv.userCompleted = userData.completed || false;
+            }
+          }
+        }
+      }
+    }
+
+    // Update user data for a conversation
+    function updateConversationUserData(uuid, updates) {
+      if (!state.userData[uuid]) {
+        state.userData[uuid] = {};
+      }
+      Object.assign(state.userData[uuid], updates);
+
+      // Save to Drive if authenticated
+      if (state.accessToken) {
+        saveUserDataToDrive();
+      }
+    }
+
+    // ============================================
+    // END GOOGLE OAUTH & DRIVE API
+    // ============================================
+
+    // Toggle completed conversations visibility
+    function toggleCompleted() {
+      state.showCompleted = document.getElementById('showCompleted').checked;
+      localStorage.setItem('showCompleted', state.showCompleted);
+      renderConversations();
+    }
+
+    // Toggle empty conversations visibility
+    function toggleEmpty() {
+      state.hideEmpty = document.getElementById('hideEmpty').checked;
+      localStorage.setItem('hideEmpty', state.hideEmpty);
+      renderConversations();
+    }
+
+    // Mark conversation as complete
+    function markComplete(conversationUuid) {
+      // Update local state (for backward compatibility)
+      state.completedConversations[conversationUuid] = true;
+      localStorage.setItem('completedConversations', JSON.stringify(state.completedConversations));
+
+      // Update user data in Drive
+      updateConversationUserData(conversationUuid, { completed: true });
+
+      renderConversations();
+      showMessage('Marked as complete!');
+    }
+
+    // Check if conversation is marked complete
+    function isComplete(conversationUuid) {
+      // Check Drive data first, fallback to local
+      if (state.userData[conversationUuid]?.completed) {
+        return true;
+      }
+      return state.completedConversations[conversationUuid] === true;
+    }
+
+    // Get conversation priority
+    function getPriority(conversationUuid) {
+      return state.userData[conversationUuid]?.priority || 'medium';
+    }
+
+    // Check if priority is confirmed
+    function isPriorityConfirmed(conversationUuid) {
+      return state.userData[conversationUuid]?.priorityConfirmed === true;
+    }
+
+    // Confirm priority
+    function confirmPriority(conversationUuid) {
+      if (!state.userData[conversationUuid]) {
+        state.userData[conversationUuid] = {};
+      }
+      state.userData[conversationUuid].priorityConfirmed = true;
+      localStorage.setItem('userData', JSON.stringify(state.userData));
+
+      // Update Drive if authenticated
+      updateConversationUserData(conversationUuid, { priorityConfirmed: true });
+
+      renderConversations();
+      showMessage('Priority confirmed');
+    }
+
+    // Set conversation priority
+    function setPriority(conversationUuid, priority) {
+      if (!state.userData[conversationUuid]) {
+        state.userData[conversationUuid] = {};
+      }
+      state.userData[conversationUuid].priority = priority;
+      state.userData[conversationUuid].priorityConfirmed = true; // Auto-confirm when manually set
+      localStorage.setItem('userData', JSON.stringify(state.userData));
+
+      // Update Drive if authenticated
+      updateConversationUserData(conversationUuid, { priority, priorityConfirmed: true });
+
+      renderConversations();
+      showMessage(`Priority set to ${priority}`);
+    }
+
+    // Check if conversation is archived
+    function isArchived(conversationUuid) {
+      return state.userData[conversationUuid]?.archived === true;
+    }
+
+    // Toggle archive status
+    function toggleArchive(conversationUuid) {
+      if (!state.userData[conversationUuid]) {
+        state.userData[conversationUuid] = {};
+      }
+      const isCurrentlyArchived = isArchived(conversationUuid);
+      state.userData[conversationUuid].archived = !isCurrentlyArchived;
+      localStorage.setItem('userData', JSON.stringify(state.userData));
+
+      // Update Drive if authenticated
+      updateConversationUserData(conversationUuid, { archived: !isCurrentlyArchived });
+
+      renderConversations();
+      showMessage(isCurrentlyArchived ? 'Unarchived' : 'Archived');
+    }
+
+    // Priority sort order
+    const priorityOrder = { urgent: 0, high: 1, medium: 2, low: 3, parked: 4 };
+
+    // Load projects from Google Drive (PRIVATE - requires authentication)
+    async function loadProjects() {
+      try {
+        showLoading(true);
+
+        // Require authentication
+        if (!state.accessToken || !state.driveFolderId) {
+          console.log('Cannot load projects: not authenticated or no folder ID');
+          showEmptyState();
+          return;
+        }
+
+        // Check if Drive API is ready
+        if (!gapi.client.drive) {
+          console.log('Drive API not ready');
+          showEmptyState();
+          return;
+        }
+
+        // Search for projects-{email}.json in Drive folder
+        const userEmail = state.userInfo.email;
+        const projectsFileName = `projects-${userEmail}.json`;
+        console.log('Searching for', projectsFileName, 'in folder:', state.driveFolderId);
+        const searchQuery = `name='${projectsFileName}' and '${state.driveFolderId}' in parents and trashed=false`;
+        console.log('Search query:', searchQuery);
+
+        const searchResponse = await gapi.client.drive.files.list({
+          q: searchQuery,
+          fields: 'files(id, name, modifiedTime)',
+          spaces: 'drive'
+        });
+
+        console.log('Search response:', searchResponse);
+
+        if (!searchResponse || !searchResponse.result) {
+          console.error('Invalid search response');
+          showMessage('Failed to search Drive', true);
+          showEmptyState();
+          return;
+        }
+
+        console.log('Files found:', searchResponse.result.files);
+
+        if (!searchResponse.result.files || searchResponse.result.files.length === 0) {
+          console.log(projectsFileName, 'not found in Drive folder - creating for new user');
+
+          // Create empty projects file for new user
+          const emptyProjects = {
+            projects: [],
+            lastUpdated: new Date().toISOString()
+          };
+
+          const fileMetadata = {
+            name: projectsFileName,
+            mimeType: 'application/json',
+            parents: [state.driveFolderId]
+          };
+
+          const fileContent = JSON.stringify(emptyProjects, null, 2);
+          const file = new Blob([fileContent], { type: 'application/json' });
+          const formData = new FormData();
+          formData.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
+          formData.append('file', file);
+
+          const createResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${state.accessToken}` },
+            body: formData
+          });
+
+          if (createResponse.ok) {
+            console.log('Created empty projects file for new user');
+            state.projects = [];
+            state.lastSync = new Date();
+            showMessage('Welcome! Your account is set up. Upload exports to get started.');
+            showEmptyState();
+          } else {
+            console.error('Failed to create projects file:', await createResponse.text());
+            showMessage('Failed to initialize your account', true);
+            showEmptyState();
+          }
+          return;
+        }
+
+        const fileId = searchResponse.result.files[0].id;
+        console.log('Found projects.json in Drive:', fileId);
+
+        // Download projects.json from Drive
+        const fileResponse = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+          { headers: { Authorization: `Bearer ${state.accessToken}` } }
+        );
+
+        if (!fileResponse.ok) {
+          throw new Error('Failed to download projects.json from Drive');
+        }
+
+        const data = await fileResponse.json();
+        state.projects = data.projects || [];
+        state.lastSync = new Date();
+
+        // Cache in localStorage
+        localStorage.setItem('projectsCache', JSON.stringify(data));
+        localStorage.setItem('lastSync', state.lastSync.toISOString());
+
+        // Merge user data from Drive
+        mergeUserData();
+
+        renderProjects();
+        updateLastSync();
+        console.log('Projects loaded from Drive:', state.projects.length);
+      } catch (error) {
+        console.error('Error loading projects:', error);
+
+        // Try to load from cache
+        const cached = localStorage.getItem('projectsCache');
+        if (cached) {
+          const data = JSON.parse(cached);
+          state.projects = data.projects || [];
+          state.lastSync = new Date(localStorage.getItem('lastSync'));
+          mergeUserData();
+          renderProjects();
+          updateLastSync();
+          showMessage('Loaded from cache (offline)');
+        } else {
+          showMessage('Failed to load projects from Drive', true);
+          showEmptyState();
+        }
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    // Render projects (populate filter and render conversations)
+    function renderProjects() {
+      if (state.projects.length === 0) {
+        showEmptyState();
+        return;
+      }
+
+      loadingEl.style.display = 'none';
+      signInPromptEl.style.display = 'none';
+      tabsContainerEl.style.display = 'block';
+      tabConversationsEl.style.display = 'block';
+      contentEl.style.display = 'block';
+      emptyStateEl.style.display = 'none';
+
+      // Populate project filter dropdown
+      populateProjectFilter();
+
+      // Render conversations
+      renderConversations();
+    }
+
+    // Populate project filter dropdown
+    function populateProjectFilter() {
+      const currentSelection = state.selectedProject;
+      projectFilterEl.innerHTML = '<option value="all">All Projects</option>';
+
+      for (const project of state.projects) {
+        const option = document.createElement('option');
+        option.value = project.id;
+        option.textContent = `${project.emoji} ${project.name}`;
+        projectFilterEl.appendChild(option);
+      }
+
+      projectFilterEl.value = currentSelection;
+    }
+
+    // Render conversations in flat timeline view
+    function renderConversations() {
+      conversationsListEl.innerHTML = '';
+
+      // Flatten all conversations from all projects
+      const allConversations = [];
+      for (const project of state.projects) {
+        if (project.conversations && project.conversations.length > 0) {
+          for (const conv of project.conversations) {
+            allConversations.push({
+              ...conv,
+              priority: getPriority(conv.uuid),
+              archived: isArchived(conv.uuid),
+              project: {
+                id: project.id,
+                name: project.name,
+                emoji: project.emoji,
+                color: project.color
+              }
+            });
+          }
+        }
+      }
+
+      // Filter conversations
+      const visibleConversations = allConversations.filter(conv => {
+        // Filter by selected project
+        if (state.selectedProject !== 'all' && conv.project.id !== state.selectedProject) {
+          return false;
+        }
+        // Filter by priority
+        if (state.selectedPriority !== 'all' && conv.priority !== state.selectedPriority) {
+          return false;
+        }
+        // Hide archived if toggled off
+        if (!state.showArchived && conv.archived) {
+          return false;
+        }
+        // Hide completed if toggled off
+        if (!state.showCompleted && isComplete(conv.uuid)) {
+          return false;
+        }
+        // Hide empty conversations (0% progress) if toggled on
+        if (state.hideEmpty && conv.progressPercent === 0) {
+          return false;
+        }
+        // Search filter
+        if (state.searchQuery) {
+          const searchIn = [
+            conv.name || '',
+            conv.topic || '',
+            conv.progressSummary || '',
+            (conv.nextSteps || []).join(' ')
+          ].join(' ').toLowerCase();
+
+          if (!searchIn.includes(state.searchQuery)) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      // Sort conversations
+      visibleConversations.sort((a, b) => {
+        if (state.sortBy === 'smart') {
+          // Smart sort: Unconfirmed priority first, then confirmed by priority
+          const aConfirmed = state.userData[a.uuid]?.priorityConfirmed === true;
+          const bConfirmed = state.userData[b.uuid]?.priorityConfirmed === true;
+
+          // Both confirmed or both unconfirmed
+          if (aConfirmed === bConfirmed) {
+            if (!aConfirmed) {
+              // Both unconfirmed - sort by last updated (newest first)
+              return new Date(b.lastUpdated) - new Date(a.lastUpdated);
+            } else {
+              // Both confirmed - sort by priority, then date
+              const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+              if (priorityDiff !== 0) return priorityDiff;
+              return new Date(b.lastUpdated) - new Date(a.lastUpdated);
+            }
+          }
+          // Unconfirmed conversations come first
+          return aConfirmed ? 1 : -1;
+
+        } else if (state.sortBy === 'priority') {
+          const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+          if (priorityDiff !== 0) return priorityDiff;
+          // Secondary sort by date if same priority
+          return new Date(b.lastUpdated) - new Date(a.lastUpdated);
+        } else if (state.sortBy === 'progress') {
+          return b.progressPercent - a.progressPercent;
+        } else {
+          // Sort by date (default)
+          return new Date(b.lastUpdated) - new Date(a.lastUpdated);
+        }
+      });
+
+      // Render conversations
+      if (visibleConversations.length > 0) {
+        for (const conv of visibleConversations) {
+          conversationsListEl.appendChild(createConversationItem(conv));
+        }
+      } else {
+        conversationsListEl.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 3rem;">No conversations to display</p>';
+      }
+    }
+
+    // Create conversation item
+    function createConversationItem(conv) {
+      const item = document.createElement('div');
+      item.className = 'conversation-item' +
+        (isComplete(conv.uuid) ? ' completed' : '') +
+        (conv.archived ? ' archived' : '');
+
+      const reviewDate = new Date(conv.reviewDate);
+      const isOverdue = reviewDate < new Date();
+
+      const priorityEmojis = {
+        urgent: '🔴',
+        high: '🟠',
+        medium: '🟡',
+        low: '🟢',
+        parked: '⏸️'
+      };
+
+      item.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <div class="project-badge" style="background-color: ${conv.project.color}">
+              <span class="project-badge-emoji">${conv.project.emoji}</span>
+              <span>${conv.project.name}</span>
+            </div>
+            <div class="priority-badge priority-${conv.priority}">
+              ${priorityEmojis[conv.priority]} ${conv.priority.charAt(0).toUpperCase() + conv.priority.slice(1)}
+            </div>
+            ${!isPriorityConfirmed(conv.uuid) ? '<span style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: var(--warning); color: #000; border-radius: 0.25rem; font-weight: 600;">⚠️ UNCONFIRMED</span>' : ''}
+            ${conv.archived ? '<span style="font-size: 0.75rem; color: var(--text-secondary);">📦 Archived</span>' : ''}
+          </div>
+        </div>
+        <div class="conversation-header">
+          <div>
+            <div class="conversation-topic">${conv.topic}</div>
+            <div class="conversation-date">Updated: ${new Date(conv.lastUpdated).toLocaleDateString()}</div>
+          </div>
+        </div>
+        <div class="conversation-summary">${conv.progressSummary}</div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: ${conv.progressPercent}%"></div>
+        </div>
+        <div class="progress-text">${conv.progressPercent}% complete</div>
+        <div class="review-date ${isOverdue ? 'overdue' : ''}">
+          Review: ${reviewDate.toLocaleDateString()}
+        </div>
+        <div class="next-steps" style="display: none;">
+          <h4>Next Steps:</h4>
+          <ul>
+            ${conv.nextSteps.map(step => `<li>${step}</li>`).join('')}
+          </ul>
+          ${!isComplete(conv.uuid) ? `<button class="complete-btn" onclick="event.stopPropagation(); markComplete('${conv.uuid}')">✓ Mark Complete</button>` : '<p style="color: var(--success); font-weight: 600; margin-top: 0.5rem;">✓ Completed</p>'}
+        </div>
+        <div class="quick-actions">
+          <select id="priority-${conv.uuid}" onchange="event.stopPropagation(); setPriority('${conv.uuid}', this.value)">
+            <option value="urgent" ${conv.priority === 'urgent' ? 'selected' : ''}>🔴 Urgent</option>
+            <option value="high" ${conv.priority === 'high' ? 'selected' : ''}>🟠 High</option>
+            <option value="medium" ${conv.priority === 'medium' ? 'selected' : ''}>🟡 Medium</option>
+            <option value="low" ${conv.priority === 'low' ? 'selected' : ''}>🟢 Low</option>
+            <option value="parked" ${conv.priority === 'parked' ? 'selected' : ''}>⏸️ Parked</option>
+          </select>
+          ${!isPriorityConfirmed(conv.uuid) ? `<button class="secondary" onclick="event.stopPropagation(); confirmPriority('${conv.uuid}')">✓ Confirm Priority</button>` : ''}
+          <button onclick="event.stopPropagation(); toggleArchive('${conv.uuid}')">
+            ${conv.archived ? '📦 Unarchive' : '📦 Archive'}
+          </button>
+        </div>
+      `;
+
+      // Toggle next steps on click
+      item.addEventListener('click', () => {
+        const nextSteps = item.querySelector('.next-steps');
+        nextSteps.style.display = nextSteps.style.display === 'none' ? 'block' : 'none';
+      });
+
+      return item;
+    }
+
+    // Show/hide loading
+    function showLoading(show) {
+      if (show) {
+        loadingEl.style.display = 'block';
+        signInPromptEl.style.display = 'none';
+        tabsContainerEl.style.display = 'none';
+        tabConversationsEl.style.display = 'none';
+        tabExportsEl.style.display = 'none';
+      } else {
+        loadingEl.style.display = 'none';
+        if (state.projects.length === 0) {
+          showEmptyState();
+        }
+      }
+    }
+
+    // Show empty state
+    function showEmptyState() {
+      loadingEl.style.display = 'none';
+
+      // Update message based on auth status
+      if (state.accessToken && state.userInfo) {
+        // User is signed in - show tabs and empty state in conversations tab
+        signInPromptEl.style.display = 'none';
+        tabsContainerEl.style.display = 'block';
+        tabConversationsEl.style.display = 'block';
+        contentEl.style.display = 'none';
+        emptyStateEl.style.display = 'block';
+
+        const folderUrl = `https://drive.google.com/drive/folders/${state.driveFolderId}`;
+        const projectsFileName = `projects-${state.userInfo.email}.json`;
+        const searchQuery = `name='${projectsFileName}' and '${state.driveFolderId}' in parents and trashed=false`;
+
+        let filesListHtml = '';
+        if (window.debugFolderFiles && window.debugFolderFiles.length > 0) {
+          filesListHtml = '<p style="margin-top: 1rem;"><strong>Files found in this folder:</strong></p><ul style="text-align: left; max-width: 600px; margin: 0.5rem auto; font-size: 0.875rem; background: var(--bg-secondary); padding: 1rem; border-radius: 0.5rem;">';
+          window.debugFolderFiles.forEach(file => {
+            filesListHtml += `<li style="margin: 0.25rem 0;"><code>${file.name}</code></li>`;
+          });
+          filesListHtml += '</ul>';
+        } else if (window.debugFolderFiles) {
+          filesListHtml = '<p style="margin-top: 1rem; color: var(--error);">❌ Folder appears empty or you don\'t have permission to see files</p>';
+        }
+
+        emptyStateEl.innerHTML = `
+          <h2>📂 No Conversations Yet</h2>
+          <p>Your projects file (<code>${projectsFileName}</code>) wasn't found.</p>
+          <p style="margin-top: 1rem;">To get started:</p>
+          <ol style="text-align: left; max-width: 500px; margin: 1rem auto; line-height: 1.8;">
+            <li>Go to the <strong>📦 Process Exports</strong> tab</li>
+            <li>Find your uploaded ZIP file</li>
+            <li>Click "Add to Queue"</li>
+            <li>Wait for GitHub Actions to process it</li>
+            <li>Refresh this page</li>
+          </ol>
+          <details style="margin-top: 2rem; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
+            <summary style="cursor: pointer; color: var(--text-secondary); font-size: 0.875rem;">🔍 Debug Info</summary>
+            <div style="margin-top: 1rem; font-size: 0.875rem;">
+              <p><strong>Looking for:</strong> <code>${projectsFileName}</code></p>
+              <p><strong>In folder:</strong> <a href="${folderUrl}" target="_blank" style="color: var(--primary);">${state.driveFolderId}</a></p>
+              ${filesListHtml}
+            </div>
+          </details>
+        `;
+      } else {
+        // User not signed in - show sign in prompt
+        signInPromptEl.style.display = 'block';
+        tabsContainerEl.style.display = 'none';
+        tabConversationsEl.style.display = 'none';
+        tabExportsEl.style.display = 'none';
+      }
+    }
+
+    // Update last sync time
+    function updateLastSync() {
+      if (state.lastSync) {
+        const timeAgo = getTimeAgo(state.lastSync);
+        lastSyncEl.textContent = `Synced ${timeAgo}`;
+      }
+    }
+
+    // Get time ago string
+    function getTimeAgo(date) {
+      const seconds = Math.floor((new Date() - date) / 1000);
+      if (seconds < 60) return 'just now';
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes}m ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours}h ago`;
+      const days = Math.floor(hours / 24);
+      return `${days}d ago`;
+    }
+
+    // Show status message
+    function showMessage(text, type = 'info') {
+      const msg = document.createElement('div');
+      msg.className = `status-message ${type}`;
+      msg.textContent = text;
+      document.body.appendChild(msg);
+
+      setTimeout(() => {
+        msg.remove();
+      }, 3000);
+    }
+
+    // ============================================
+    // TAB NAVIGATION
+    // ============================================
+
+    function switchTab(tabName) {
+      // Update tab buttons
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.tab === tabName);
+      });
+
+      // Update tab content - show/hide appropriately
+      if (tabName === 'conversations') {
+        tabConversationsEl.style.display = 'block';
+        tabExportsEl.style.display = 'none';
+      } else if (tabName === 'exports') {
+        tabConversationsEl.style.display = 'none';
+        tabExportsEl.style.display = 'block';
+        loadExportsTab();
+      }
+    }
+
+    // ============================================
+    // EXPORT MANAGEMENT & QUEUE
+    // ============================================
+
+    // Load exports tab (list ZIPs and queue status)
+    async function loadExportsTab() {
+      if (!state.accessToken || !state.driveFolderId) {
+        document.getElementById('exportsList').innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 2rem;">Sign in to view exports</p>';
+        return;
+      }
+
+      try {
+        // Load queue first
+        await loadQueue();
+
+        // List ZIP files in Drive folder
+        const response = await gapi.client.drive.files.list({
+          q: `'${state.driveFolderId}' in parents and (mimeType='application/zip' or mimeType='application/x-zip-compressed') and trashed=false`,
+          fields: 'files(id, name, modifiedTime, size)',
+          orderBy: 'modifiedTime desc',
+          pageSize: 50
+        });
+
+        const exports = response.result.files || [];
+        renderExportsList(exports);
+      } catch (error) {
+        console.error('Error loading exports:', error);
+        document.getElementById('exportsList').innerHTML = '<p style="color: var(--error); text-align: center; padding: 2rem;">Failed to load exports</p>';
+      }
+    }
+
+    // Load queue from Drive
+    async function loadQueue() {
+      try {
+        const searchResponse = await gapi.client.drive.files.list({
+          q: `name='process-queue.json' and '${state.driveFolderId}' in parents and trashed=false`,
+          fields: 'files(id)',
+        });
+
+        if (searchResponse.result.files && searchResponse.result.files.length > 0) {
+          const fileId = searchResponse.result.files[0].id;
+          const fileResponse = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+            { headers: { Authorization: `Bearer ${state.accessToken}` } }
+          );
+
+          if (fileResponse.ok) {
+            state.queue = await fileResponse.json();
+            updateQueueStats();
+            return;
+          }
+        }
+
+        // Queue doesn't exist yet
+        state.queue = { queue: [] };
+        updateQueueStats();
+      } catch (error) {
+        console.error('Error loading queue:', error);
+        state.queue = { queue: [] };
+        updateQueueStats();
+      }
+    }
+
+    // Update queue statistics display
+    function updateQueueStats() {
+      const queue = state.queue.queue || [];
+      const pending = queue.filter(item => item.status === 'pending').length;
+      const processing = queue.filter(item => item.status === 'processing').length;
+      const completed = queue.filter(item => item.status === 'completed').length;
+
+      document.getElementById('queuePending').textContent = pending;
+      document.getElementById('queueProcessing').textContent = processing;
+      document.getElementById('queueCompleted').textContent = completed;
+    }
+
+    // Render exports list
+    function renderExportsList(exports) {
+      const listEl = document.getElementById('exportsList');
+
+      if (exports.length === 0) {
+        listEl.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 2rem;">No export files found. Upload Claude export ZIPs to this Drive folder.</p>';
+        return;
+      }
+
+      const queue = state.queue.queue || [];
+      const userEmail = state.userInfo.email;
+
+      // Filter exports to only show user's own exports or unqueued ones
+      const userExports = exports.filter(exp => {
+        const queueItem = queue.find(q => q.zipFileId === exp.id);
+        // Show if: not in queue yet, OR in queue and belongs to this user
+        return !queueItem || queueItem.email === userEmail;
+      });
+
+      if (userExports.length === 0) {
+        listEl.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 2rem;">No exports for your account. Upload your Claude export ZIPs to this Drive folder.</p>';
+        return;
+      }
+
+      listEl.innerHTML = userExports.map(exp => {
+        const queueItem = queue.find(q => q.zipFileId === exp.id);
+        const status = queueItem ? queueItem.status : 'not-queued';
+        const modifiedDate = new Date(exp.modifiedTime);
+        const sizeInMB = (exp.size / (1024 * 1024)).toFixed(2);
+
+        let statusBadge = '';
+        let actionButton = '';
+
+        if (status === 'pending') {
+          statusBadge = '<span class="export-status pending">⏳ Pending</span>';
+          actionButton = '<button disabled style="opacity: 0.5;">In Queue</button>';
+        } else if (status === 'processing') {
+          statusBadge = '<span class="export-status processing">⚙️ Processing</span>';
+          actionButton = '<button disabled style="opacity: 0.5;">Processing...</button>';
+        } else if (status === 'completed') {
+          statusBadge = '<span class="export-status completed">✓ Completed</span>';
+          actionButton = '<button class="secondary" onclick="event.stopPropagation(); reprocessExport(\'' + exp.id + '\', \'' + exp.name + '\')">Reprocess</button>';
+        } else {
+          statusBadge = '<span class="export-status" style="background: var(--bg-secondary); color: var(--text);">Not Processed</span>';
+          actionButton = '<button onclick="event.stopPropagation(); addToQueue(\'' + exp.id + '\', \'' + exp.name + '\')">Add to Queue</button>';
+        }
+
+        return `
+          <div class="export-item">
+            <div class="export-info">
+              <div class="export-name">📦 ${exp.name}</div>
+              <div class="export-meta">
+                ${modifiedDate.toLocaleString()} • ${sizeInMB} MB
+              </div>
+            </div>
+            ${statusBadge}
+            ${actionButton}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Add export to queue
+    async function addToQueue(zipFileId, zipFileName) {
+      if (!state.userInfo) {
+        showMessage('Please sign in first', true);
+        return;
+      }
+
+      try {
+        // Add to queue
+        const queueItem = {
+          id: Date.now().toString(),
+          zipFileId: zipFileId,
+          zipFileName: zipFileName,
+          email: state.userInfo.email,
+          status: 'pending',
+          addedAt: new Date().toISOString(),
+          processedAt: null,
+          error: null
+        };
+
+        state.queue.queue.push(queueItem);
+
+        // Save queue to Drive
+        await saveQueue();
+
+        showMessage('Added to processing queue!');
+        loadExportsTab(); // Refresh
+      } catch (error) {
+        console.error('Error adding to queue:', error);
+        showMessage('Failed to add to queue', true);
+      }
+    }
+
+    // Reprocess an export
+    async function reprocessExport(zipFileId, zipFileName) {
+      const confirmed = confirm('Reprocess this export? This will overwrite your existing projects file.');
+      if (!confirmed) return;
+
+      await addToQueue(zipFileId, zipFileName);
+    }
+
+    // Save queue to Drive
+    async function saveQueue() {
+      try {
+        const content = JSON.stringify(state.queue, null, 2);
+        const blob = new Blob([content], { type: 'application/json' });
+
+        // Check if file exists
+        const searchResponse = await gapi.client.drive.files.list({
+          q: `name='process-queue.json' and '${state.driveFolderId}' in parents and trashed=false`,
+          fields: 'files(id)',
+        });
+
+        let fileId = null;
+        if (searchResponse.result.files && searchResponse.result.files.length > 0) {
+          fileId = searchResponse.result.files[0].id;
+        }
+
+        const metadata = {
+          name: 'process-queue.json',
+          mimeType: 'application/json',
+        };
+
+        if (!fileId) {
+          metadata.parents = [state.driveFolderId];
+        }
+
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        form.append('file', blob);
+
+        const url = fileId
+          ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
+          : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+
+        const response = await fetch(url, {
+          method: fileId ? 'PATCH' : 'POST',
+          headers: { Authorization: `Bearer ${state.accessToken}` },
+          body: form,
+        });
+
+        if (response.ok) {
+          console.log('Queue saved to Drive');
+          return true;
+        } else {
+          throw new Error('Failed to save queue');
+        }
+      } catch (error) {
+        console.error('Error saving queue:', error);
+        return false;
+      }
+    }
+
+    // Make functions available globally
+    window.addToQueue = addToQueue;
+    window.reprocessExport = reprocessExport;
+
+    // ============================================
+    // EVENT LISTENERS
+    // ============================================
+
+    // Tab switching
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+    });
+
+    // Event Listeners
+    signInBtn.addEventListener('click', handleSignIn);
+    signOutBtn.addEventListener('click', handleSignOut);
+
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      loadProjects();
+    });
+
+    document.getElementById('settingsBtn').addEventListener('click', () => {
+      settingsPanelEl.classList.add('open');
+    });
+
+    document.getElementById('closeSettings').addEventListener('click', () => {
+      settingsPanelEl.classList.remove('open');
+    });
+
+    document.getElementById('saveSettings').addEventListener('click', async () => {
+      state.fileId = driveFileIdInput.value;
+      state.oauthClientId = oauthClientIdInput.value;
+      state.driveFolderId = driveFolderIdInput.value;
+
+      localStorage.setItem('driveFileId', state.fileId);
+      localStorage.setItem('oauthClientId', state.oauthClientId);
+      localStorage.setItem('driveFolderId', state.driveFolderId);
+
+      settingsPanelEl.classList.remove('open');
+      showMessage('Settings saved! Please refresh to apply OAuth changes.');
+
+      // Re-initialize auth if OAuth settings changed
+      if (state.oauthClientId) {
+        await initGoogleAuth();
+      }
+    });
+
+    document.getElementById('clearCache').addEventListener('click', () => {
+      localStorage.removeItem('projectsCache');
+      localStorage.removeItem('lastSync');
+      showMessage('Cache cleared!');
+      settingsPanelEl.classList.remove('open');
+    });
+
+    document.getElementById('showCompleted').addEventListener('change', toggleCompleted);
+    document.getElementById('hideEmpty').addEventListener('change', toggleEmpty);
+    document.getElementById('showArchived').addEventListener('change', () => {
+      state.showArchived = document.getElementById('showArchived').checked;
+      localStorage.setItem('showArchived', state.showArchived);
+      renderConversations();
+    });
+
+    projectFilterEl.addEventListener('change', (e) => {
+      state.selectedProject = e.target.value;
+      renderConversations();
+    });
+
+    priorityFilterEl.addEventListener('change', (e) => {
+      state.selectedPriority = e.target.value;
+      renderConversations();
+    });
+
+    sortByEl.addEventListener('change', (e) => {
+      state.sortBy = e.target.value;
+      localStorage.setItem('sortBy', state.sortBy);
+      renderConversations();
+    });
+
+    searchBoxEl.addEventListener('input', (e) => {
+      state.searchQuery = e.target.value.toLowerCase().trim();
+      renderConversations();
+    });
+
+    // Make functions available globally
+    window.markComplete = markComplete;
+    window.setPriority = setPriority;
+    window.confirmPriority = confirmPriority;
+    window.isPriorityConfirmed = isPriorityConfirmed;
+    window.toggleArchive = toggleArchive;
+
+    // Initialize app
+    init();
+
+    // Update "time ago" every minute
+    setInterval(updateLastSync, 60000);
+  </script>
+</body>
+</html>

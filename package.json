@@ -1,0 +1,27 @@
+{
+  "name": "claude-progress-tracker",
+  "version": "1.0.0",
+  "description": "Automated Claude.ai conversation progress tracking system",
+  "main": "src/process.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/process.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "claude",
+    "progress-tracking",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.20.0",
+    "googleapis": "^118.0.0",
+    "google-auth-library": "^9.0.0",
+    "adm-zip": "^0.5.10"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
