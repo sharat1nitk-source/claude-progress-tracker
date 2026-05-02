@@ -147,22 +147,17 @@ Go to your repository → Settings → Secrets and variables → Actions → New
 2. **GOOGLE_DRIVE_FOLDER_ID**: Your Drive folder ID
 3. **ANTHROPIC_API_KEY**: Your Anthropic API key
 
-### Step 4: Configure PWA
+### Step 4: Configure PWA (First-Time Setup)
 
-Update `config.json`:
-```json
-{
-  "oauthClientId": "YOUR_OAUTH_CLIENT_ID.apps.googleusercontent.com",
-  "driveFolderId": "YOUR_DRIVE_FOLDER_ID"
-}
-```
+**No config file needed!** Everything is configured via Settings panel:
 
-Commit and push:
-```bash
-git add config.json
-git commit -m "Configure OAuth and Drive"
-git push origin main
-```
+1. Open your PWA: `https://YOUR-USERNAME.github.io/claude-progress-tracker/`
+2. Click ⚙️ Settings button (or it will open automatically)
+3. Enter:
+   - **OAuth Client ID**: Your client ID from Step 2
+   - **Drive Folder ID**: Your folder ID from Step 2
+4. Click "Save Settings"
+5. Settings are stored in browser localStorage (private to you)
 
 ### Step 5: Enable GitHub Pages
 

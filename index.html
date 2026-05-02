@@ -935,31 +935,23 @@
 
     // Load config from config.json
     async function loadConfig() {
-      try {
-        const response = await fetch('config.json', { cache: 'no-store' });
-        if (response.ok) {
-          const config = await response.json();
+      // Config.json is NOT used for security reasons (exposes OAuth client ID publicly)
+      // Users MUST configure OAuth Client ID and Drive Folder ID in Settings panel
+      console.log('Using OAuth and Drive settings from localStorage only');
 
-          // Use config values if they exist and localStorage is empty
-          if (config.oauthClientId && !localStorage.getItem('oauthClientId')) {
-            state.oauthClientId = config.oauthClientId;
-          }
-          if (config.driveFolderId && !localStorage.getItem('driveFolderId')) {
-            state.driveFolderId = config.driveFolderId;
-          }
+      // Check if critical values are missing
+      if (!state.oauthClientId || !state.driveFolderId) {
+        console.log('Missing OAuth configuration - prompting user to configure');
+        showMessage('⚙️ Please configure OAuth settings first - opening Settings...', true);
 
-          // Always override with config if it has values (config takes priority)
-          if (config.oauthClientId) {
-            state.oauthClientId = config.oauthClientId;
+        // Auto-open settings panel after brief delay
+        setTimeout(() => {
+          settingsPanelEl.classList.add('open');
+          // Focus first empty field
+          if (!state.oauthClientId) {
+            document.getElementById('oauthClientId').focus();
           }
-          if (config.driveFolderId) {
-            state.driveFolderId = config.driveFolderId;
-          }
-
-          console.log('Config loaded from config.json');
-        }
-      } catch (error) {
-        console.log('No config.json found, using localStorage values');
+        }, 1500);
       }
     }
 

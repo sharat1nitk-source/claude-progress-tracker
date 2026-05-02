@@ -33,7 +33,9 @@ projects-*.json
 processed_conversations*.json
 user-data*.json
 process-queue.json
-config.json
 
 # Debug folder
 debug/
+
+# Local config (if user creates one for testing)
+config.json
