@@ -18,13 +18,18 @@ async function runLocalTest() {
   // Get API key from command line argument
   const apiKey = process.argv[2];
   if (!apiKey) {
-    console.error('❌ Please provide your Anthropic API key:');
-    console.error('   node test-local.js sk-ant-your-key-here\n');
+    console.error('❌ Usage: node test-local.js <api-key> <path-to-export-zip>');
+    console.error('   Example: node test-local.js sk-ant-your-key-here /path/to/export.zip\n');
     process.exit(1);
   }
 
-  // Use the export file from Downloads
-  const exportPath = '/mnt/c/Users/Sharat/Downloads/data-5e0b3e26-e66b-4508-aee6-903cd37c359f-1776660570-ee3100f7-batch-0000.zip';
+  // Get export file path from command line
+  const exportPath = process.argv[3];
+  if (!exportPath) {
+    console.error('❌ Please provide path to your Claude export ZIP file');
+    console.error('   Example: node test-local.js sk-ant-... ~/Downloads/export.zip\n');
+    process.exit(1);
+  }
 
   console.log('📦 Processing export:', path.basename(exportPath), '\n');
 
