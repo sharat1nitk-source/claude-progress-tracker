@@ -49,7 +49,6 @@ let credentials;
                           process.exit(1);
                 }
         }
-        console.log('Service Account Email:', credentials.client_email);
 
     return {
       credentials,
@@ -307,6 +306,40 @@ let credentials;
   }
 
   /**
+   * Clean up queue by removing stale items
+   */
+  async cleanupQueue(queue) {
+    const now = Date.now();
+    const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
+
+    // Get all ZIP files currently in Drive
+    const driveFiles = await this.driveAPI.listFiles(
+      this.config.folderId,
+      "mimeType='application/zip' or mimeType='application/x-zip-compressed'"
+    );
+    const driveFileIds = new Set(driveFiles.map(f => f.id));
+
+    queue.queue = queue.queue.filter(item => {
+      // Remove completed items older than 1 week
+      if (item.status === 'completed' && item.processedAt) {
+        const processedTime = new Date(item.processedAt).getTime();
+        if (now - processedTime > ONE_WEEK) {
+          console.log(`  🗑️  Removing old completed item: ${item.zipFileName}`);
+          return false;
+        }
+      }
+
+      // Remove failed items where ZIP file no longer exists in Drive
+      if ((item.status === 'failed' || item.status === 'pending') && !driveFileIds.has(item.zipFileId)) {
+        console.log(`  🗑️  Removing item with deleted ZIP: ${item.zipFileName}`);
+        return false;
+      }
+
+      return true;
+    });
+  }
+
+  /**
    * Cleanup temporary files
    */
   async cleanup() {
@@ -327,26 +360,25 @@ let credentials;
       await this.initialize();
 
       // Read queue from Drive
-      console.log('📋 Looking for process-queue.json in folder:', this.config.folderId);
       let queue = await this.driveAPI.downloadJSON(
         this.config.folderId,
         'process-queue.json'
       );
 
-      console.log('Queue data:', queue);
-
       if (!queue || !queue.queue || queue.queue.length === 0) {
         console.log('\n⚠️  No items in processing queue');
-        console.log('Queue object:', JSON.stringify(queue, null, 2));
-
-        // List all JSON files to help debug
-        const allFiles = await this.driveAPI.listFiles(
-          this.config.folderId,
-          "mimeType='application/json'"
-        );
-        console.log('All JSON files in folder:', allFiles.map(f => f.name));
-
         return;
+      }
+
+      // Clean up queue: remove old failed items and items with deleted ZIP files
+      const beforeCleanup = queue.queue.length;
+      await this.cleanupQueue(queue);
+      const afterCleanup = queue.queue.length;
+
+      if (beforeCleanup !== afterCleanup) {
+        console.log(`\n🧹 Cleaned up ${beforeCleanup - afterCleanup} stale queue item(s)`);
+        // Save cleaned queue
+        await this.driveAPI.uploadJSON(this.config.folderId, 'process-queue.json', queue);
       }
 
       // Filter pending items

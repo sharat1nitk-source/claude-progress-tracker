@@ -54,7 +54,6 @@ class DriveAPI {
 
       return response.data.files || [];
     } catch (error) {
-      console.error('❌ Failed to list files:', error.message);
       throw error;
     }
   }
@@ -85,7 +84,6 @@ class DriveAPI {
           .on('error', reject);
       });
     } catch (error) {
-      console.error(`❌ Failed to download file ${fileId}:`, error.message);
       throw error;
     }
   }
@@ -136,7 +134,7 @@ class DriveAPI {
         return response.data;
       }
     } catch (error) {
-      console.error(`❌ Failed to upload file ${fileName}:`, error.message);
+      // Don't log here - let caller handle error logging to avoid duplicates
       throw error;
     }
   }
@@ -155,7 +153,6 @@ class DriveAPI {
 
       return response.data;
     } catch (error) {
-      console.error(`❌ Failed to get file metadata ${fileId}:`, error.message);
       throw error;
     }
   }
@@ -182,7 +179,6 @@ class DriveAPI {
 
       return response.data;
     } catch (error) {
-      console.error(`❌ Failed to download JSON ${fileName}:`, error.message);
       return null;
     }
   }

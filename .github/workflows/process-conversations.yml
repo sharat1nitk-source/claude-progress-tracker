@@ -15,7 +15,7 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   process:
@@ -42,20 +42,6 @@ jobs:
           FORCE_REPROCESS: ${{ github.event.inputs.force_reprocess }}
         run: node src/process.js
 
-      - name: Download projects.json from Drive
-        env:
-          GOOGLE_DRIVE_CREDENTIALS: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS }}
-          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
-        run: node src/download-projects.js
-
-      - name: Commit and push projects.json
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add projects.json
-          git diff --staged --quiet || git commit -m "Update projects.json [skip ci]"
-          git push
-
       - name: Output summary
         if: always()
         run: |
@@ -66,4 +52,5 @@ jobs:
             cat processing-summary.json >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Privacy:** User data stored privately on Google Drive" >> $GITHUB_STEP_SUMMARY
           echo "PWA available at: https://${GITHUB_REPOSITORY_OWNER}.github.io/claude-progress-tracker/" >> $GITHUB_STEP_SUMMARY

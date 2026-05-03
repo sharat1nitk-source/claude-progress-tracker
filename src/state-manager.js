@@ -45,7 +45,7 @@ class StateManager {
         };
       }
     } catch (error) {
-      console.error(`⚠️  Failed to load state from ${this.stateFileName}, starting fresh:`, error.message);
+      console.log(`📝 Starting fresh (unable to load existing state)`);
       this.state = {
         conversations: {},
         lastRunAt: null,
@@ -67,7 +67,7 @@ class StateManager {
 
       console.log(`✅ Saved processing state to ${this.stateFileName}`);
     } catch (error) {
-      console.error(`❌ Failed to save state to ${this.stateFileName}:`, error.message);
+      // Don't log here - let caller handle error logging to avoid duplicates
       throw error;
     }
   }

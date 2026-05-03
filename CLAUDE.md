@@ -4,12 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-An automated system for tracking Claude.ai conversation progress across projects. The system:
+A privacy-preserving, multi-user system for tracking Claude.ai conversation progress across projects. The system:
 1. Processes Claude conversation exports (ZIP files) from Google Drive
 2. Uses Claude API to extract structured metadata (project, progress %, next steps)
-3. Publishes tracking data to a mobile-friendly PWA hosted on GitHub Pages
+3. Stores tracking data in user-specific files on Google Drive (never publicly committed)
+4. PWA authenticates users via Google OAuth and shows only their own data
 
-**Tech Stack:** Node.js (ES modules), Google Drive API, Anthropic API, vanilla JavaScript PWA
+**Privacy Model:** Each user's data is isolated in `projects-{email}.json` files on Drive. The PWA requires authentication and only displays the authenticated user's projects. No user data is ever committed to the public repository.
+
+**Tech Stack:** Node.js (ES modules), Google Drive API, Anthropic API, Google OAuth 2.0, vanilla JavaScript PWA
 
 ## Development Commands
 
@@ -31,7 +34,8 @@ npm start
 python3 -m http.server 8000
 # Open http://localhost:8000
 
-# Note: PWA reads from projects.json at root (committed to repo)
+# Note: PWA requires OAuth authentication and reads user-specific data from Google Drive
+# Configure OAuth Client ID and Drive Folder ID in Settings after first launch
 ```
 
 ### GitHub Actions Workflow
@@ -45,26 +49,39 @@ python3 -m http.server 8000
 
 ## Architecture
 
-### Data Flow
+### Data Flow (Privacy-Preserving)
 ```
 Claude.ai Export (ZIP) 
-  → Google Drive folder
+  → Google Drive shared folder (process-queue.json tracks pending ZIPs)
   → GitHub Actions downloads & extracts
   → Claude API processes each conversation
-  → State saved to Drive (processed_conversations.json)
-  → Tracking data uploaded to Drive (projects.json)
-  → projects.json downloaded to repo & committed
-  → GitHub Pages serves PWA reading projects.json
+  → State saved to Drive (processed_conversations-{email}.json per user)
+  → Tracking data uploaded to Drive (projects-{email}.json per user)
+  → NO PUBLIC COMMIT - data stays private on Drive
+  → PWA authenticates user via OAuth
+  → PWA reads only that user's projects-{email}.json from Drive
+  → User sees only their own conversations
 ```
+
+### Multi-User Privacy Architecture
+The system supports multiple users while maintaining complete data isolation:
+- **Backend Processing:** Each user has separate state (`processed_conversations-{email}.json`) and projects (`projects-{email}.json`) files on Drive
+- **Frontend Access:** PWA requires Google OAuth authentication. After sign-in, users can only access their own `projects-{email}.json` file
+- **No Cross-User Data Access:** Users cannot see other users' conversations or projects
+- **No Public Data:** User data is NEVER committed to the public GitHub repository
+- **Shared Infrastructure:** All users share the same Drive folder and processing workflow, but data is isolated by email
 
 ### Source Structure
 
 **src/process.js** (Main orchestrator)
 - ConversationProcessor class coordinates entire flow
+- Reads process-queue.json to find pending ZIP files
+- Cleans up queue (removes items with deleted ZIPs, old completed items)
 - Downloads ZIPs from Drive, extracts conversations.json
 - Calls ClaudeAPI to process new/updated conversations
-- Updates projects.json with results
-- Key methods: `run()`, `processConversations()`, `updateTrackingData()`
+- Updates user-specific projects-{email}.json with results
+- Aggregates all user projects into projects.json
+- Key methods: `run()`, `processConversations()`, `updateTrackingData()`, `cleanupQueue()`
 
 **src/claude-api.js** (Claude API client)
 - Batches conversation processing
@@ -78,29 +95,32 @@ Claude.ai Export (ZIP)
 - Handles both file downloads and JSON read/write
 
 **src/state-manager.js** (Delta processing)
-- Tracks processed conversations in `processed_conversations.json` on Drive
+- Tracks processed conversations in `processed_conversations-{email}.json` on Drive
 - Computes content hash to detect changes
 - `filterConversations()` returns only new/modified conversations
 - Enables efficient incremental processing (doesn't reprocess unchanged conversations)
+- User-specific state prevents cross-user reprocessing
 
-**src/download-projects.js** (CI helper)
-- Downloads projects.json from Drive to repo root
-- Used in GitHub Actions to commit updated tracking data
+**~~src/download-projects.js~~** (REMOVED)
+- Previously downloaded projects.json to repo - removed for privacy
+- User data is never committed to public repository
 
 **index.html** (PWA frontend)
 - Single-file PWA with inline CSS and JavaScript
-- Fetches projects.json from same domain (committed file)
-- Displays projects, conversations, progress bars, next steps
-- Supports filtering, completion marking, and settings (projects.json file ID)
-- All state stored in localStorage
+- Requires Google OAuth authentication (redirect-based flow)
+- Reads user-specific `projects-{email}.json` from Google Drive
+- Displays only authenticated user's projects and conversations
+- Supports filtering, completion marking, and settings
+- User state stored in localStorage (OAuth tokens, preferences)
+- Privacy-first: No cross-user data access
 
 **service-worker.js** (Offline support)
-- Caches PWA assets and projects.json for offline access
-- Cache-first strategy with fallback
+- Caches PWA assets for offline access
+- Does NOT cache user data (always fresh from Drive)
 
 ### Key Data Structures
 
-**projects.json** (tracking data in Drive & repo):
+**projects-{email}.json** (per-user tracking data in Drive - PRIVATE):
 ```javascript
 {
   "projects": [
@@ -128,8 +148,9 @@ Claude.ai Export (ZIP)
   "lastUpdated": "2026-04-20T12:00:00Z"
 }
 ```
+**Privacy Note:** This file is stored ONLY on Google Drive and never committed to the repository. Each user has their own file accessible only to them via OAuth.
 
-**processed_conversations.json** (state in Drive):
+**processed_conversations-{email}.json** (per-user state in Drive):
 ```javascript
 {
   "conversations": {
@@ -155,13 +176,22 @@ Projects are auto-created from Claude API responses. `getProjectStyle()` in proc
 
 When adding new categories, update the `styles` object in `ConversationProcessor.getProjectStyle()`.
 
-## GitHub Secrets Required
+## Setup Requirements
 
+### GitHub Secrets (for backend processing)
 Set these in repository Settings → Secrets and variables → Actions:
 
 1. **GOOGLE_DRIVE_CREDENTIALS** - Service account JSON (entire file contents)
-2. **GOOGLE_DRIVE_FOLDER_ID** - Drive folder ID from URL
+2. **GOOGLE_DRIVE_FOLDER_ID** - Shared Drive folder ID from URL
 3. **ANTHROPIC_API_KEY** - API key from console.anthropic.com
+
+### OAuth Setup (for PWA authentication)
+1. Create OAuth 2.0 Client ID in Google Cloud Console
+2. Add authorized redirect URIs (your GitHub Pages URL)
+3. Users configure their OAuth Client ID in PWA Settings
+4. Users authenticate and grant Drive access to read their projects file
+
+**Important:** The Drive folder must be a Shared Drive, not a personal folder. Service accounts cannot access personal Drive folders.
 
 ## Important Implementation Notes
 
@@ -171,11 +201,21 @@ The state-manager.js ensures only new or modified conversations are sent to Clau
 ### Conversation Sorting
 In PWA, conversations are sorted by last update date (most recent first). The project `updateTrackingData()` sorts by review date for action prioritization.
 
-### PWA Data Source
-The PWA reads from projects.json committed to the repository (served via GitHub Pages). The workflow downloads from Drive and commits this file after each run. The PWA settings screen allows configuring a Google Drive file ID as an alternative data source.
+### PWA Data Source & Privacy
+The PWA reads user-specific `projects-{email}.json` files directly from Google Drive via OAuth. No user data is ever committed to the repository or served via GitHub Pages. This ensures complete privacy - users can only access their own conversation data after authentication.
 
 ### Error Handling
 If Claude API processing fails for some conversations, those are skipped but others continue. Check workflow logs for error details. Failed conversations will retry on next run since they weren't marked as processed.
+
+### Queue Management
+The process-queue.json file tracks all ZIP files to be processed:
+- New ZIPs are added with status 'pending'
+- Successfully processed ZIPs are marked 'completed'
+- Failed ZIPs are marked 'failed' with error message
+- Queue cleanup runs before each processing session:
+  - Removes items where ZIP file has been deleted from Drive
+  - Removes completed items older than 1 week
+  - Prevents repeated processing of deleted files
 
 ## Common Development Scenarios
 
