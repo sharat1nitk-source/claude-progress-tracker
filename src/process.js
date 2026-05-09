@@ -217,14 +217,18 @@ class ConversationProcessor {
         'process-queue.json'
       );
 
-      if (!queue || !queue.queue || queue.queue.length === 0) {
-        console.log('\nNo items in processing queue');
-        return;
+      if (!queue || !queue.queue) {
+        queue = { queue: [] };
       }
 
       // Auto-queue: discover latest export ZIP and add to queue
       if (this.config.autoQueueEmail) {
         await this.autoQueueLatestZip(queue);
+      }
+
+      if (queue.queue.length === 0) {
+        console.log('\nNo items in processing queue');
+        return;
       }
 
       const beforeCleanup = queue.queue.length;
