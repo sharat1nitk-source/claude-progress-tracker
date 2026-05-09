@@ -24,12 +24,14 @@ class DigestGenerator {
 
     const pending = extractSection('Pending Tasks').slice(0, 5);
     const blockers = extractSection('Blockers').slice(0, 3);
+    const blockersResolved = extractSection('Blockers Resolved').slice(0, 3);
     const decisions = extractSection('Decisions Made').slice(-3);
 
     let condensed = `### ${name} (status: ${status}, last active: ${lastActive})\n`;
     if (currentState) condensed += `Current: ${currentState}\n`;
     if (pending.length) condensed += `Pending: ${pending.join(' | ')}\n`;
     if (blockers.length) condensed += `Blockers: ${blockers.join(' | ')}\n`;
+    if (blockersResolved.length) condensed += `Blockers recently resolved: ${blockersResolved.join(' | ')}\n`;
     if (decisions.length) condensed += `Recent decisions: ${decisions.join(' | ')}\n`;
     const note = trackNotes[slug] || '';
     if (note) condensed += `User note: ${note}\n`;
@@ -75,17 +77,28 @@ class DigestGenerator {
 
 ${contextBlock}
 
-First, analyze each track's real priority by weighing these signals:
-- **Recency**: Recently active tracks (>0 tasks pending) matter more than dormant ones
+IMPORTANT RULES — read carefully:
+
+1. **User notes are AUTHORITATIVE**: Each track may have a "User note:" line. This is the USER telling you something about this track. If a user note contradicts the document data (e.g., says "blocker is resolved" or "dev environment is ready"), BELIEVE THE USER NOTE over the stale document data. These notes are the user's explicit corrections.
+
+2. **Check for resolved blockers**: Track documents may have a "## Blockers Resolved" section listing blockers that were resolved in a conversation. Do NOT list resolved blockers as current blockers. Only report blockers that are still active and recent.
+
+3. **Trajectory over aggregate**: Look at the RECENT conversations (last 2-3 entries in the conversation history). Recent activity matters more than old status. A track that was "blocked" 3 conversations ago but "active" for the last 2 is actually active now.
+
+4. **Be critical about stale data**: If last active date is old (>7 days), the data may be stale. Lead with the user's note if available.
+
+5. **User priorities**: "User-Set Track Priorities" and "User-Stated Priority Overrides" MUST directly influence the focus_recommendation and cross_track_priorities.
+
+First, analyze each track's real priority by weighing these signals in order of importance:
+- **User notes and priorities** (highest — these override everything)
+- **Recency**: Recently active tracks matter more than dormant ones
+- **Trajectory**: Is the track trending active/improving or stuck/declining?
 - **Task density**: Tracks with many concrete pending tasks should rank higher
-- **Blocker impact**: Blocked tracks need attention to unstick, but chronic blockers without progress signal neglect
+- **Blocker impact**: Blocked tracks need attention to unstick, BUT check if the blockers are recent or historical
 - **Completion trajectory**: Tracks where most tasks are done and nothing new is pending may be winding down
-- **User priorities**: Respect user-set high/low priorities explicitly
 - **Cross-track impact**: Tracks that unblock or feed into others are higher leverage
 
 Then generate a JSON digest. The focus_recommendation should be opinionated: tell the user exactly what to work on first and why. The cross_track_priorities should rank by actual importance to the user's goals — not just status labels. Use the analysis above to determine rank.
-
-If user-stated priority overrides exist, they MUST influence the focus_recommendation and cross_track_priorities ranking.
 
 Keep all text SHORT — one sentence max per field. Limit arrays strictly to the counts shown.
 

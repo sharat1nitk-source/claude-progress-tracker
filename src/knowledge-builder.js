@@ -43,7 +43,8 @@ class KnowledgeBuilder {
     const allPlans = [];
     const allCompleted = [];
     let allPending = [];
-    const allBlockers = [];
+    const allBlockers = [];      // { text, convName, date }
+    const allResolvedBlockers = []; // { text, convName, date }
     const allQuestions = [];
     const allInsights = [];
     const connectionMap = new Map();
@@ -64,8 +65,11 @@ class KnowledgeBuilder {
       for (const t of knowledge.tasks_pending) {
         allPending.push(t);
       }
-      for (const b of knowledge.blockers) {
-        allBlockers.push(b);
+      for (const b of (knowledge.blockers || [])) {
+        allBlockers.push({ text: b, convName, date });
+      }
+      for (const b of (knowledge.blockers_resolved || [])) {
+        allResolvedBlockers.push({ text: b, convName, date });
       }
       for (const q of knowledge.open_questions) {
         allQuestions.push(q);
@@ -78,27 +82,47 @@ class KnowledgeBuilder {
       }
     }
 
-    // Compute aggregate track health (not just latest.status)
-    const statusCounts = {};
-    let convsWithBlockers = 0;
-    for (const { knowledge } of conversations) {
-      statusCounts[knowledge.status] = (statusCounts[knowledge.status] || 0) + 1;
-      if (knowledge.blockers && knowledge.blockers.length > 0) convsWithBlockers++;
+    // Deduplicate blockers: remove any blocker that was later explicitly marked as resolved
+    const resolvedTexts = new Set(allResolvedBlockers.map(b => b.text.trim().toLowerCase()));
+    const activeBlockers = allBlockers.filter(b => !resolvedTexts.has(b.text.trim().toLowerCase()));
+
+    // Track unique resolved blockers for display
+    const uniqueResolved = [];
+    const seenResolved = new Set();
+    for (const b of allResolvedBlockers) {
+      const key = b.text.trim().toLowerCase();
+      if (!seenResolved.has(key)) { seenResolved.add(key); uniqueResolved.push(b); }
     }
+
+    // Trajectory-aware status: recent conversations (last 3) weighted more
+    const recentThreshold = 3;
+    const recentConvs = conversations.slice(-recentThreshold);
+    const latestIsBlocked = latest.status === 'blocked' && (latest.blockers || []).length > 0;
+
+    // Check if recent trajectory is positive (recent convs are active, no new blockers)
+    const recentBlocked = recentConvs.filter(({ knowledge }) =>
+      knowledge.status === 'blocked' && (knowledge.blockers || []).length > 0
+    );
+    const recentActive = recentConvs.filter(({ knowledge }) => knowledge.status === 'active');
+    const trajectoryPositive = recentActive.length > recentBlocked.length && recentBlocked.length === 0;
+
+    // Check if ANY active blocker comes from a recent conversation (vs stale/historical)
+    const recentBlockerTexts = new Set();
+    for (const { knowledge } of recentConvs) {
+      for (const b of (knowledge.blockers || [])) recentBlockerTexts.add(b.trim().toLowerCase());
+    }
+    const hasRecentActiveBlockers = activeBlockers.some(b => recentBlockerTexts.has(b.text.trim().toLowerCase()));
+
     const totalActionable = allPending.length + allCompleted.length;
-    const completionRatio = totalActionable > 0 ? allCompleted.length / totalActionable : 0;
+    const allDone = totalActionable > 0 ? (allCompleted.length / totalActionable) >= 0.9 : false;
+    const noPendingLeft = allPending.length === 0 && totalActionable > 0;
 
     let overallStatus;
-    const latestIsCompleted = latest.status === 'completed';
-    const majorityCompleted = statusCounts['completed'] >= conversations.length * 0.7 && conversations.length > 1;
-    const allDone = totalActionable > 0 && completionRatio >= 0.9;
-    const noPendingLeft = allPending.length === 0 && totalActionable > 0;
-    const hasRecentBlockers = convsWithBlockers > 0 && convsWithBlockers >= conversations.length * 0.3;
-    const latestIsBlocked = latest.status === 'blocked' && !latestIsCompleted;
-
-    if (hasRecentBlockers || (latestIsBlocked && !majorityCompleted)) {
+    if (latestIsBlocked && hasRecentActiveBlockers && !trajectoryPositive) {
       overallStatus = 'blocked';
-    } else if (allDone || noPendingLeft || majorityCompleted) {
+    } else if (conversations.length >= 2 && trajectoryPositive && !latestIsBlocked) {
+      overallStatus = 'active';
+    } else if (allDone || noPendingLeft) {
       overallStatus = 'completed';
     } else if (allPending.length > 0 || conversations.length > 0) {
       overallStatus = 'active';
@@ -148,9 +172,14 @@ class KnowledgeBuilder {
       md += '\n';
     }
 
-    if (allBlockers.length > 0) {
+    if (activeBlockers.length > 0) {
       md += `## Blockers\n`;
-      for (const b of allBlockers) md += `- ${b}\n`;
+      for (const b of activeBlockers) md += `- ${b.text} — ${b.convName}, ${b.date}\n`;
+      md += '\n';
+    }
+    if (uniqueResolved.length > 0) {
+      md += `## Blockers Resolved\n`;
+      for (const b of uniqueResolved) md += `- ${b.text} — ${b.convName}, ${b.date}\n`;
       md += '\n';
     }
 
@@ -195,24 +224,26 @@ class KnowledgeBuilder {
 
 ${trackSummaries}
 
-Generate a cross-track synthesis document. Respond ONLY with markdown (no code fences around the whole thing):
+Generate a cross-track synthesis document. Focus on TRAJECTORY — where is each track heading, not just where it's been. Note any blockers that appear to be resolved in recent conversations vs blockers that remain active.
+
+Respond ONLY with markdown (no code fences around the whole thing):
 
 # Cross-Track Synthesis
 Last updated: ${new Date().toISOString().split('T')[0]}
 
 ## Overall Picture
-{paragraph — where things stand across all tracks}
+{2 paragraphs — where things stand across all tracks, highlighting recent momentum and key shifts}
 
 ## Track Health
-| Track | Status | Last Active | Open Tasks | Blockers |
-|-------|--------|-------------|------------|----------|
-{one row per track}
+| Track | Status | Last Active | Open Tasks | Blockers (Active) | Trend |
+|-------|--------|-------------|------------|-------------------|-------|
+{one row per track, Trend = improving/stable/declining/new}
 
 ## Cross-Track Dependencies
 - {track A} depends on {track B}: {why}
 {or "None identified" if none}
 
-## Priority Matrix (ranked)
+## Priority Matrix (ranked by impact)
 1. {action} — Track: {name} — Why: {reason}
 2. ...
 

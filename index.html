@@ -1188,6 +1188,7 @@
       const pending = section('Pending Tasks').slice(0, 8);
       const decisions = section('Decisions Made').slice(0, 5);
       const blockers = section('Blockers').slice(0, 5);
+      const blockersResolved = section('Blockers Resolved').slice(0, 5);
       const insights = section('Key Insights').slice(0, 5);
 
       // Parse ALL conversation dates from history table
@@ -1248,6 +1249,9 @@
         html += '<h4>Blockers</h4>';
         if (firstDate) html += `<div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:0.25rem;">Since ${firstDate} · ${blockers.length} blocker${blockers.length > 1 ? 's' : ''} across ${allDates.length} conversations</div>`;
         html += '<ul>' + blockers.map(b => `<li>${esc(b)}</li>`).join('') + '</ul>';
+      }
+      if (blockersResolved.length) {
+        html += '<h4 style="color:#166534;">Blockers Resolved</h4><ul style="color:#166534;">' + blockersResolved.map(b => `<li>${esc(b)}</li>`).join('') + '</ul>';
       }
       if (insights.length) {
         html += '<h4>Key Insights</h4><ul>' + insights.map(i => `<li>${esc(i)}</li>`).join('') + '</ul>';
@@ -1588,11 +1592,13 @@
           const currentState = csm ? csm[1].trim().split(/\. +/).slice(0, 2).join('. ') : '';
           const pending = extractSection('Pending Tasks').slice(0, 5);
           const blockers = extractSection('Blockers').slice(0, 3);
+          const blockersResolved = extractSection('Blockers Resolved').slice(0, 3);
           const decisions = extractSection('Decisions Made').slice(-3);
           let c = `### ${trackDoc.name} (status: ${status}, last active: ${lastActive})\n`;
           if (currentState) c += `Current: ${currentState}\n`;
           if (pending.length) c += `Pending: ${pending.join(' | ')}\n`;
           if (blockers.length) c += `Blockers: ${blockers.join(' | ')}\n`;
+          if (blockersResolved.length) c += `Blockers recently resolved: ${blockersResolved.join(' | ')}\n`;
           if (decisions.length) c += `Recent decisions: ${decisions.join(' | ')}\n`;
           const note = state.trackNotes[trackDoc.slug] || '';
           if (note) c += `User note: ${note}\n`;
@@ -1618,15 +1624,27 @@
 
 ${contextBlock}
 
+IMPORTANT RULES — read carefully:
+
+1. **User notes are AUTHORITATIVE**: Each track may have a "User note:" line. This is the USER telling you something about this track. If a user note contradicts the document data (e.g., says "blocker is resolved" or "dev environment is ready"), BELIEVE THE USER NOTE over stale document data. These notes are the user's explicit corrections.
+
+2. **Check for resolved blockers**: Track documents may have a "Blockers recently resolved:" field. Do NOT list resolved blockers as current blockers. Only report blockers that are still active and recent.
+
+3. **Trajectory over aggregate**: Look at the data holistically. A track that was blocked before but has recent active conversations is actually active now. Prioritize recent signals.
+
+4. **User priorities**: "User-Set Track Priorities" MUST directly influence the focus_recommendation and cross_track_priorities.
+
 First, analyze each track's real priority by weighing these signals:
-- **Recency**: Recently active tracks (>0 tasks pending) matter more than dormant ones
+- **User notes** (highest — these override stale document data)
+- **Trajectory**: Is the track trending active/improving or stuck/declining?
+- **Recency**: Recently active tracks matter more than dormant ones
 - **Task density**: Tracks with many concrete pending tasks should rank higher
-- **Blocker impact**: Blocked tracks need attention to unstick, but chronic blockers without progress signal neglect
-- **Completion trajectory**: Tracks where most tasks are done and nothing new is pending may be winding down
+- **Blocker impact**: Blocked tracks need attention, BUT check if blockers are recent or resolved
+- **Completion trajectory**: Tracks winding down should rank lower
 - **User priorities**: Respect user-set high/low priorities explicitly
 - **Cross-track impact**: Tracks that unblock or feed into others are higher leverage
 
-Then generate a JSON digest. The focus_recommendation should be opinionated: tell the user exactly what to work on first and why. The cross_track_priorities should rank by actual importance to the user's goals — not just status labels. Use the analysis above to determine rank.
+Then generate a JSON digest. The focus_recommendation should be opinionated: tell the user exactly what to work on first and why. The cross_track_priorities should rank by actual importance to the user's goals — not just status labels.
 
 Keep all text SHORT — one sentence max per field. Limit arrays strictly to the counts shown.
 
@@ -1785,7 +1803,7 @@ STRICT LIMITS: top_priorities max 3 items, blockers max 2 items, recent_wins max
 
         let systemPrompt = `You are a personal assistant with complete knowledge of the user's projects, plans, decisions, and progress — derived from their Claude.ai conversation history.
 
-Answer questions concisely and specifically. When the user asks about a specific track or needs detailed information (decisions, tasks, blockers), use the get_track_details tool. For high-level questions use the context below directly.
+All context you have is listed below under Available Tracks, Focus Recommendation, and Cross-Track Synthesis. Be concise and specific. When the user asks about a specific track's decisions, tasks, blockers, or conversations, check the data below carefully — each track entry shows its status, focus, blockers, and the user's own notes. If you don't have enough detail, say so honestly rather than making things up.
 
 ${knowledgeContext}`;
 
