@@ -1033,18 +1033,41 @@
           state.trackNotes = data.trackNotes || {};
           state.trackOrder = data.trackOrder || [];
           state.snoozedTracks = data.snoozedTracks || {};
+          localStorage.setItem('kbSettings', JSON.stringify(data));
+          return;
         }
-      } catch { /* no settings yet */ }
+      } catch { /* Drive not available */ }
+      try {
+        const local = JSON.parse(localStorage.getItem('kbSettings'));
+        if (local) {
+          state.archivedTracks = local.archivedTracks || [];
+          state.trackPriorities = local.trackPriorities || {};
+          state.trackNotes = local.trackNotes || {};
+          state.trackOrder = local.trackOrder || [];
+          state.snoozedTracks = local.snoozedTracks || {};
+        }
+      } catch {}
     }
 
     async function saveKBSettings() {
-      await driveUploadJSON(state.driveFolderId, 'kb-settings.json', {
+      localStorage.setItem('kbSettings', JSON.stringify({
         archivedTracks: state.archivedTracks,
         trackPriorities: state.trackPriorities,
         trackNotes: state.trackNotes,
         trackOrder: state.trackOrder,
         snoozedTracks: state.snoozedTracks,
-      });
+      }));
+      try {
+        await driveUploadJSON(state.driveFolderId, 'kb-settings.json', {
+          archivedTracks: state.archivedTracks,
+          trackPriorities: state.trackPriorities,
+          trackNotes: state.trackNotes,
+          trackOrder: state.trackOrder,
+          snoozedTracks: state.snoozedTracks,
+        });
+      } catch (e) {
+        console.warn('Drive settings save failed (saved locally):', e.message);
+      }
     }
 
     async function archiveTrack(slug) {
@@ -1238,6 +1261,10 @@
     window.toggleTrackDetails = toggleTrackDetails;
     window.snoozeTrack = snoozeTrack;
     window.unsnoozeTrack = unsnoozeTrack;
+    window.togglePriorityDetail = (el) => {
+      const detail = el.querySelector('.priority-detail');
+      if (detail) detail.style.display = detail.style.display === 'none' ? 'block' : 'none';
+    };
 
     // ============================================
     // FOCUS BRIEF
@@ -1320,9 +1347,19 @@
       const archivedTracksList = (d.tracks || []).filter(t => archived.has(t.slug));
       const snoozedTracksList = (d.tracks || []).filter(t => snoozedSlugs.has(t.slug) && !archived.has(t.slug));
 
-      // Build trackOrder from current sort on first load if empty
+      // Build trackOrder from priority rank on first load if empty
       if (state.trackOrder.length === 0) {
+        const rankMap = {};
+        if (d.cross_track_priorities) {
+          d.cross_track_priorities.forEach(p => {
+            const slug = p.track.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+            rankMap[slug] = p.rank;
+          });
+        }
         const sorted = [...activeTracks].sort((a, b) => {
+          const ra = rankMap[a.slug] ?? 99;
+          const rb = rankMap[b.slug] ?? 99;
+          if (ra !== rb) return ra - rb;
           const pa = priorityOrder[state.trackPriorities[a.slug] || 'normal'];
           const pb = priorityOrder[state.trackPriorities[b.slug] || 'normal'];
           if (pa !== pb) return pa - pb;
@@ -1379,7 +1416,12 @@
             const p = t.top_priorities[i];
             const uClass = `urgency-${p.urgency || 'medium'}`;
             const uSymbol = p.urgency === 'high' ? '▲' : p.urgency === 'low' ? '▼' : '●';
-            html += `<li><span class="${uClass}">${uSymbol}</span> ${esc(p.action)}</li>`;
+            html += `<li onclick="togglePriorityDetail(this)" style="cursor:pointer;">`;
+            html += `<span class="${uClass}">${uSymbol}</span> ${esc(p.action)}`;
+            if (p.why) {
+              html += `<div class="priority-detail" style="display:none;font-size:0.8rem;color:var(--text-secondary);margin-top:0.2rem;padding-left:1.2rem;">${esc(p.why)}</div>`;
+            }
+            html += `</li>`;
           }
           html += '</ul>';
         }
