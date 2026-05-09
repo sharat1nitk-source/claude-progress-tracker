@@ -313,6 +313,23 @@
       color: var(--text-secondary);
     }
     .track-details li::before { content: '· '; color: var(--text-muted); }
+    .track-details .raw-doc-toggle {
+      font-size: 0.75rem; margin-top: 0.75rem; cursor: pointer; color: var(--text-muted);
+      background: none; border: 1px dashed var(--border); padding: 0.3rem 0.6rem; border-radius: 4px;
+      width: 100%; text-align: center;
+    }
+    .track-details .raw-doc-toggle:hover { background: var(--bg); color: var(--text); }
+    .track-details .raw-doc {
+      display: none; margin-top: 0.5rem; max-height: 400px; overflow-y: auto;
+      background: #1a1a2e; color: #e0e0e0; padding: 0.75rem; border-radius: 4px;
+      font-size: 0.7rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+      font-family: 'Courier New', monospace;
+    }
+    .track-details .raw-doc.open { display: block; }
+    .freshness-bar {
+      font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.5rem;
+      display: flex; gap: 1rem; flex-wrap: wrap;
+    }
 
     .section-title {
       font-size: 0.9rem;
@@ -988,7 +1005,6 @@
 
     async function driveUploadJSON(folderId, fileName, data) {
       const content = JSON.stringify(data, null, 2);
-      const blob = new Blob([content], { type: 'application/json' });
 
       const searchResp = await gapi.client.drive.files.list({
         q: `name='${fileName}' and '${folderId}' in parents and trashed=false`,
@@ -1005,19 +1021,36 @@
       const metadata = { name: fileName, mimeType: 'application/json' };
       if (!fileId) metadata.parents = [folderId];
 
-      const form = new FormData();
-      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-      form.append('file', blob);
+      // Use multipart/related (not multipart/form-data) as required by Drive API
+      const boundary = '-------' + Math.random().toString(36).substring(2);
+      const delimiter = '\r\n--' + boundary + '\r\n';
+      const closeDelimiter = '\r\n--' + boundary + '--';
+      const body = delimiter +
+        'Content-Type: application/json\r\n\r\n' +
+        JSON.stringify(metadata) +
+        delimiter +
+        'Content-Type: application/json\r\n\r\n' +
+        content +
+        closeDelimiter;
 
       const url = fileId
         ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart&supportsAllDrives=true`
         : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true`;
 
-      await fetch(url, {
+      const resp = await fetch(url, {
         method: fileId ? 'PATCH' : 'POST',
-        headers: { Authorization: `Bearer ${state.accessToken}` },
-        body: form,
+        headers: {
+          Authorization: `Bearer ${state.accessToken}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`,
+        },
+        body: body,
       });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        console.error(`Drive upload failed for ${fileName}: ${resp.status} ${errText}`);
+        throw new Error(`Upload failed: ${resp.status}`);
+      }
     }
 
     // ============================================
@@ -1147,6 +1180,11 @@
         return m[1].split('\n').filter(l => l.startsWith('- ')).map(l => l.slice(2).trim());
       };
 
+      // Extract metadata from document header
+      const statusMatch = document.match(/Status: (\w+) \| Last active: (\d{4}-\d{2}-\d{2})/);
+      const trackStatus = statusMatch?.[1] || 'unknown';
+      const lastActiveDate = statusMatch?.[2] || 'unknown';
+
       const pending = section('Pending Tasks').slice(0, 8);
       const decisions = section('Decisions Made').slice(0, 5);
       const blockers = section('Blockers').slice(0, 5);
@@ -1197,6 +1235,7 @@
       }
 
       let html = '';
+      html += `<div class="freshness-bar"><span>Data: last active ${lastActiveDate}</span><span>Status: ${trackStatus}</span><span>${allDates.length} conversations</span></div>`;
       if (sparkHtml) html += sparkHtml;
       if (pending.length) {
         html += '<h4>Next Steps</h4><ul>' + pending.map(p => `<li>${esc(p)}</li>`).join('') + '</ul>';
@@ -1216,7 +1255,11 @@
       if (recentConvs.length) {
         html += '<h4>Recent Activity</h4><ul>' + recentConvs.map(c => `<li>${esc(c.date)} — ${esc(c.name || c.summary)}</li>`).join('') + '</ul>';
       }
-      if (!html) html = '<em>No detailed data available</em>';
+      // Raw document viewer for debugging
+      const slugForDoc = document.match(/# (.+?)\n/)?.[1] || '';
+      const safeDoc = esc(document);
+      html += `<button class="raw-doc-toggle" onclick="toggleRawDoc(this)">Show raw document</button>
+      <div class="raw-doc">${safeDoc}</div>`;
       return html;
     }
 
@@ -1256,9 +1299,18 @@
       showMessage('Track unsnoozed');
     }
 
+    function toggleRawDoc(btn) {
+      const doc = btn.nextElementSibling;
+      if (doc && doc.classList.contains('raw-doc')) {
+        const isOpen = doc.classList.toggle('open');
+        btn.textContent = isOpen ? 'Hide raw document' : 'Show raw document';
+      }
+    }
+
     window.moveTrackUp = moveTrackUp;
     window.moveTrackDown = moveTrackDown;
     window.toggleTrackDetails = toggleTrackDetails;
+    window.toggleRawDoc = toggleRawDoc;
     window.snoozeTrack = snoozeTrack;
     window.unsnoozeTrack = unsnoozeTrack;
     window.togglePriorityDetail = (el) => {
