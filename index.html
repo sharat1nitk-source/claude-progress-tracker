@@ -704,6 +704,7 @@
       archivedTracks: [],
       trackPriorities: {},
       trackNotes: {},
+      trackOrder: [],
       queue: { queue: [] },
       chatHistory: [],
     };
@@ -960,6 +961,7 @@
           state.archivedTracks = data.archivedTracks || [];
           state.trackPriorities = data.trackPriorities || {};
           state.trackNotes = data.trackNotes || {};
+          state.trackOrder = data.trackOrder || [];
         }
       } catch { /* no settings yet */ }
     }
@@ -969,6 +971,7 @@
         archivedTracks: state.archivedTracks,
         trackPriorities: state.trackPriorities,
         trackNotes: state.trackNotes,
+        trackOrder: state.trackOrder,
       });
     }
 
@@ -1025,10 +1028,30 @@
       el.innerHTML = note ? esc(note) : '<span class="note-placeholder">Add note...</span>';
     }
 
+    async function moveTrackUp(slug) {
+      const idx = state.trackOrder.indexOf(slug);
+      if (idx > 0) {
+        [state.trackOrder[idx - 1], state.trackOrder[idx]] = [state.trackOrder[idx], state.trackOrder[idx - 1]];
+        await saveKBSettings();
+        renderBrief();
+      }
+    }
+
+    async function moveTrackDown(slug) {
+      const idx = state.trackOrder.indexOf(slug);
+      if (idx >= 0 && idx < state.trackOrder.length - 1) {
+        [state.trackOrder[idx], state.trackOrder[idx + 1]] = [state.trackOrder[idx + 1], state.trackOrder[idx]];
+        await saveKBSettings();
+        renderBrief();
+      }
+    }
+
     window.archiveTrack = archiveTrack;
     window.unarchiveTrack = unarchiveTrack;
     window.setTrackPriority = setTrackPriority;
     window.editTrackNote = editTrackNote;
+    window.moveTrackUp = moveTrackUp;
+    window.moveTrackDown = moveTrackDown;
 
     // ============================================
     // FOCUS BRIEF
@@ -1096,24 +1119,43 @@
         </div>
       `;
 
-      // Sort: priority first (high → normal → low), then status within
+      // Sort: manual order first, fall back to priority+status
       const priorityOrder = { high: 0, normal: 1, low: 2 };
       const statusOrder = { blocked: 0, stalling: 1, active: 2, completed: 3 };
       const archived = new Set(state.archivedTracks);
       const activeTracks = (d.tracks || []).filter(t => !archived.has(t.slug));
       const archivedTracksList = (d.tracks || []).filter(t => archived.has(t.slug));
 
-      const sortedTracks = [...activeTracks].sort((a, b) => {
-        const pa = priorityOrder[state.trackPriorities[a.slug] || 'normal'];
-        const pb = priorityOrder[state.trackPriorities[b.slug] || 'normal'];
-        if (pa !== pb) return pa - pb;
-        return (statusOrder[a.status] ?? 2) - (statusOrder[b.status] ?? 2);
-      });
+      // Build trackOrder from current sort on first load if empty
+      if (state.trackOrder.length === 0) {
+        const sorted = [...activeTracks].sort((a, b) => {
+          const pa = priorityOrder[state.trackPriorities[a.slug] || 'normal'];
+          const pb = priorityOrder[state.trackPriorities[b.slug] || 'normal'];
+          if (pa !== pb) return pa - pb;
+          return (statusOrder[a.status] ?? 2) - (statusOrder[b.status] ?? 2);
+        });
+        state.trackOrder = sorted.map(t => t.slug);
+      }
+
+      // Reconcile: remove deleted tracks, append new ones at end
+      const existingSlugs = new Set(activeTracks.map(t => t.slug));
+      state.trackOrder = state.trackOrder.filter(s => existingSlugs.has(s));
+      for (const t of activeTracks) {
+        if (!state.trackOrder.includes(t.slug)) state.trackOrder.push(t.slug);
+      }
+
+      // Sort by trackOrder index
+      const orderIdx = {};
+      state.trackOrder.forEach((s, i) => orderIdx[s] = i);
+      const sortedTracks = [...activeTracks].sort((a, b) => (orderIdx[a.slug] ?? 999) - (orderIdx[b.slug] ?? 999));
 
       for (const t of sortedTracks) {
         const statusClass = `status-${t.status || 'active'}`;
         const safeSlug = esc(t.slug);
         const priority = state.trackPriorities[t.slug] || 'normal';
+        const idx = state.trackOrder.indexOf(t.slug);
+        const isFirst = idx === 0;
+        const isLast = idx === state.trackOrder.length - 1;
         html += `
           <div class="track-card">
             <div class="track-header">
@@ -1122,6 +1164,8 @@
                 ${priority !== 'normal' ? `<span class="priority-badge priority-${priority}">${priority}</span>` : ''}
               </div>
               <div style="display:flex;gap:0.35rem;align-items:center;">
+                <button class="priority-btn" onclick="moveTrackUp('${safeSlug}')" title="Move up" ${isFirst ? 'disabled style="opacity:0.3"' : ''}>↑</button>
+                <button class="priority-btn" onclick="moveTrackDown('${safeSlug}')" title="Move down" ${isLast ? 'disabled style="opacity:0.3"' : ''}>↓</button>
                 <button class="priority-btn ${priority === 'high' ? 'active-high' : ''}" onclick="setTrackPriority('${safeSlug}','${priority === 'high' ? 'normal' : 'high'}')" title="${priority === 'high' ? 'Remove high priority' : 'Set high priority'}">▲</button>
                 <button class="priority-btn ${priority === 'low' ? 'active-low' : ''}" onclick="setTrackPriority('${safeSlug}','${priority === 'low' ? 'normal' : 'low'}')" title="${priority === 'low' ? 'Remove low priority' : 'Set low priority'}">▼</button>
                 <span class="status-badge ${statusClass}">${(t.status || 'active').toUpperCase()}</span>
