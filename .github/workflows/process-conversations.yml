@@ -43,6 +43,7 @@ jobs:
           GOOGLE_DRIVE_CREDENTIALS: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS }}
           GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           FORCE_REPROCESS: ${{ github.event.inputs.force_reprocess }}
           AUTO_QUEUE_EMAIL: ${{ github.event.inputs.email }}
         run: node src/process.js

@@ -11,7 +11,7 @@ A personal AI knowledge assistant that processes Claude.ai chat exports into a l
 4. Provides a chat interface to query your knowledge base
 5. All data stays private on Google Drive — never committed to the public repo
 
-**Tech Stack:** Node.js (ES modules), Google Drive API, Anthropic API (Claude Sonnet), Google OAuth 2.0, vanilla JavaScript PWA
+**Tech Stack:** Node.js (ES modules), Google Drive API, DeepSeek API (deepseek-chat), Google OAuth 2.0, vanilla JavaScript PWA
 
 ## Development Commands
 
@@ -37,34 +37,34 @@ python3 -m http.server 8000
 Claude.ai export ZIP (on Google Drive)
   -> process.js reads process-queue.json
   -> Downloads + extracts ZIP (conversations.json, projects.json, memories.json)
-  -> knowledge-extractor.js: per-conversation extraction via Claude Sonnet
+  -> knowledge-extractor.js: per-conversation extraction via DeepSeek
   -> state-manager.js: delta processing (skip unchanged conversations)
-  -> knowledge-builder.js: build track docs + cross-track synthesis via Claude Sonnet
-  -> digest-generator.js: generate structured digest JSON via Claude Sonnet
+  -> knowledge-builder.js: build track docs + cross-track synthesis via DeepSeek
+  -> digest-generator.js: generate structured digest JSON via DeepSeek
   -> All outputs written to Google Drive knowledge-base/ folder
 ```
 
 ### PWA (index.html)
 ```
 Tab 1: Focus Brief — reads digest-{email}.json, shows priorities + track cards
-Tab 2: Chat — conversational Q&A over knowledge base via Claude Sonnet (browser-side API call)
+Tab 2: Chat — conversational Q&A over knowledge base via DeepSeek (browser-side API call)
 Tab 3: Exports — queue management for ZIP processing
 ```
 
 ### Source Structure
 
 **src/knowledge-extractor.js** — Per-conversation knowledge extraction
-- One Claude Sonnet call per conversation
+- One DeepSeek call per conversation
 - Extracts: track, conversation_type, narrative_summary, decisions, plans, tasks, blockers, insights, connections, status, importance
 - Accumulates track names across conversations for consistency
 
 **src/knowledge-builder.js** — Track document + synthesis generation
 - Groups extraction results by track
 - Builds markdown document per track (decisions, plans, tasks, blockers, insights, history table)
-- Single Claude Sonnet call for cross-track synthesis (dependencies, priority matrix, themes)
+- Single DeepSeek call for cross-track synthesis (dependencies, priority matrix, themes)
 
 **src/digest-generator.js** — Visual digest JSON generation
-- Single Claude Sonnet call with all track docs + synthesis
+- Single DeepSeek call with all track docs + synthesis
 - Reads priorities.json (user-stated overrides from Chat tab)
 - Reads memories from export for additional context
 - Outputs structured JSON consumed by PWA Focus Brief tab
@@ -97,7 +97,7 @@ Tab 3: Exports — queue management for ZIP processing
 
 ## Key Design Decisions
 
-- **All Claude calls use claude-sonnet-4-6** — quality matters more than cost savings from Haiku
+- **All Claude calls use deepseek-chat** — DeepSeek provides quality at lower cost
 - **Priorities persist via priorities.json** — Chat tab writes priority overrides to Drive, digest generator reads them
 - **memories.json from export** feeds into digest generation for additional user context
 - **1-hour cache TTL** on digest and synthesis in the PWA for offline/performance
@@ -109,9 +109,9 @@ Tab 3: Exports — queue management for ZIP processing
 ### GitHub Secrets
 1. **GOOGLE_DRIVE_CREDENTIALS** — Service account JSON
 2. **GOOGLE_DRIVE_FOLDER_ID** — Shared Drive folder ID
-3. **ANTHROPIC_API_KEY** — From console.anthropic.com
+3. **DEEPSEEK_API_KEY** — From https://platform.deepseek.com/api_keys
 
 ### PWA Settings (configured in-app)
 1. Google OAuth Client ID
 2. Google Drive Folder ID
-3. Anthropic API Key (for Chat tab, stored in localStorage only)
+3. DeepSeek API Key (for Chat tab, stored in localStorage only)

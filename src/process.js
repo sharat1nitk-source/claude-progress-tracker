@@ -25,7 +25,7 @@ class ConversationProcessor {
   }
 
   loadConfig() {
-    const requiredVars = ['GOOGLE_DRIVE_CREDENTIALS', 'GOOGLE_DRIVE_FOLDER_ID', 'ANTHROPIC_API_KEY'];
+    const requiredVars = ['GOOGLE_DRIVE_CREDENTIALS', 'GOOGLE_DRIVE_FOLDER_ID', 'DEEPSEEK_API_KEY'];
     const missing = requiredVars.filter(v => !process.env[v]);
 
     if (missing.length > 0) {
@@ -49,7 +49,7 @@ class ConversationProcessor {
     return {
       credentials,
       folderId: process.env.GOOGLE_DRIVE_FOLDER_ID,
-      apiKey: process.env.ANTHROPIC_API_KEY,
+      apiKey: process.env.DEEPSEEK_API_KEY,
       forceReprocess: process.env.FORCE_REPROCESS === 'true',
       autoQueueEmail: process.env.AUTO_QUEUE_EMAIL || null,
     };

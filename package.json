@@ -16,10 +16,10 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.20.0",
-    "googleapis": "^118.0.0",
+    "adm-zip": "^0.5.10",
     "google-auth-library": "^9.0.0",
-    "adm-zip": "^0.5.10"
+    "googleapis": "^118.0.0",
+    "openai": "^6.37.0"
   },
   "engines": {
     "node": ">=18.0.0"

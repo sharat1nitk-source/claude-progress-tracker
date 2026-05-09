@@ -616,7 +616,7 @@
                 <span class="chat-suggestion" data-q="Give me a status update across all tracks">Status update across all tracks</span>
               </div>
               <div id="chatNeedsApiKey" style="display: none; margin-top: 1.5rem;">
-                <p style="color: var(--warning);">Add your Anthropic API Key in Settings to enable chat.</p>
+                <p style="color: var(--warning);">Add your DeepSeek API Key in Settings to enable chat.</p>
               </div>
             </div>
           </div>
@@ -664,9 +664,9 @@
         <small>Shared Drive folder with your knowledge base</small>
       </div>
       <div class="settings-group">
-        <label for="anthropicApiKey">Anthropic API Key</label>
-        <input type="password" id="anthropicApiKey" placeholder="sk-ant-...">
-        <small>Required for Chat tab. Stored locally only, never sent to any server except Anthropic.</small>
+        <label for="anthropicApiKey">DeepSeek API Key</label>
+        <input type="password" id="anthropicApiKey" placeholder="sk-...">
+        <small>Required for Chat tab. Stored locally only, sent directly to DeepSeek API.</small>
       </div>
       <button id="saveSettings">Save Settings</button>
       <button class="secondary" id="signOutBtn" style="margin-top: 0.75rem; display: none;">Sign Out</button>
@@ -1200,7 +1200,7 @@
 
     async function reevaluateDigest() {
       if (!state.anthropicApiKey) {
-        showMessage('Add your Anthropic API Key in Settings to re-evaluate', 'error');
+        showMessage('Add your DeepSeek API Key in Settings to re-evaluate', 'error');
         document.getElementById('settingsPanel').classList.add('open');
         return;
       }
@@ -1285,21 +1285,19 @@ Respond ONLY with valid JSON (no markdown, no explanation):
 
 STRICT LIMITS: top_priorities max 3 items, blockers max 2 items, recent_wins max 2 items, cross_track_priorities max 8 items.`;
 
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
+        const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': state.anthropicApiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true',
+            'Authorization': 'Bearer ' + state.anthropicApiKey,
           },
-          body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 8192, temperature: 0.3, messages: [{ role: 'user', content: prompt }] }),
+          body: JSON.stringify({ model: 'deepseek-chat', max_tokens: 8192, temperature: 0.3, messages: [{ role: 'user', content: prompt }] }),
         });
 
         if (!response.ok) throw new Error(`API error ${response.status}: ${await response.text()}`);
 
         const data = await response.json();
-        let resultText = data.content[0].text.trim();
+        let resultText = data.choices[0].message.content.trim();
         if (resultText.startsWith('```json')) resultText = resultText.replace(/```json\s*/, '').replace(/```\s*$/, '');
         else if (resultText.startsWith('```')) resultText = resultText.replace(/```\s*/, '').replace(/```\s*$/, '');
 
@@ -1398,7 +1396,7 @@ STRICT LIMITS: top_priorities max 3 items, blockers max 2 items, recent_wins max
 
     async function sendChatMessage(userMessage) {
       if (!state.anthropicApiKey) {
-        showMessage('Add your Anthropic API Key in Settings to use chat', 'error');
+        showMessage('Add your DeepSeek API Key in Settings to use chat', 'error');
         document.getElementById('settingsPanel').classList.add('open');
         return;
       }
@@ -1425,68 +1423,30 @@ ${knowledgeContext}`;
 PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": "${new Date().toISOString()}"}`;
         }
 
-        const tools = [{
-          name: 'get_track_details',
-          description: 'Get the full document for a specific project track, including all decisions, tasks, blockers, plans, key insights, and conversation history.',
-          input_schema: {
-            type: 'object',
-            properties: {
-              slug: { type: 'string', description: 'The track slug, e.g. "career-transition". Listed in Available Tracks above.' }
-            },
-            required: ['slug']
-          }
-        }];
-
         // Messages for API — current turn is the last item (already pushed above)
-        let apiMessages = state.chatHistory.map(m => ({ role: m.role, content: m.content }));
+        let apiMessages = [{ role: 'system', content: systemPrompt }, ...state.chatHistory.map(m => ({ role: m.role, content: m.content }))];
         let finalText = '';
 
-        while (true) {
-          const response = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': state.anthropicApiKey,
-              'anthropic-version': '2023-06-01',
-              'anthropic-dangerous-direct-browser-access': 'true',
-            },
-            body: JSON.stringify({
-              model: 'claude-sonnet-4-6',
-              max_tokens: 2048,
-              system: systemPrompt,
-              tools,
-              messages: apiMessages,
-            }),
-          });
+        const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + state.anthropicApiKey,
+          },
+          body: JSON.stringify({
+            model: 'deepseek-chat',
+            max_tokens: 2048,
+            messages: apiMessages,
+          }),
+        });
 
-          if (!response.ok) {
-            const errText = await response.text();
-            throw new Error(`API error ${response.status}: ${errText}`);
-          }
-
-          const data = await response.json();
-
-          if (data.stop_reason === 'tool_use') {
-            const toolUseBlocks = data.content.filter(b => b.type === 'tool_use');
-            const toolResults = toolUseBlocks.map(toolUseBlock => {
-              const slug = toolUseBlock.input.slug;
-              const track = state.kbTracks?.find(
-                t => t.slug === slug || t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') === slug
-              );
-              const trackContent = track
-                ? `# ${track.name}\n\n${track.document}`
-                : `No track found with slug "${slug}". Available: ${(state.kbTracks || []).map(t => t.slug).join(', ')}`;
-              return { type: 'tool_result', tool_use_id: toolUseBlock.id, content: trackContent };
-            });
-
-            apiMessages.push({ role: 'assistant', content: data.content });
-            apiMessages.push({ role: 'user', content: toolResults });
-          } else {
-            const textBlock = data.content.find(b => b.type === 'text');
-            finalText = textBlock?.text || '';
-            break;
-          }
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`API error ${response.status}: ${errText}`);
         }
+
+        const data = await response.json();
+        finalText = data.choices[0].message.content.trim();
 
         typingEl.remove();
 

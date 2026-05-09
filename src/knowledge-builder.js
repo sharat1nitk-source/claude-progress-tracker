@@ -1,9 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 
 class KnowledgeBuilder {
   constructor(apiKey) {
-    this.client = new Anthropic({ apiKey });
-    this.model = 'claude-sonnet-4-6';
+    this.client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com' });
+    this.model = 'deepseek-chat';
   }
 
   slugify(name) {
@@ -219,14 +219,14 @@ Last updated: ${new Date().toISOString().split('T')[0]}
 ## Connections & Themes
 - {observation about patterns, shared themes, or synergies across tracks}`;
 
-    const response = await this.client.messages.create({
+    const response = await this.client.chat.completions.create({
       model: this.model,
       max_tokens: 4096,
       temperature: 0.3,
       messages: [{ role: 'user', content: prompt }],
     });
 
-    return response.content[0].text;
+    return response.choices[0].message.content;
   }
 
   buildProjectLookup(projects) {

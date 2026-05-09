@@ -1,9 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 
 class DigestGenerator {
   constructor(apiKey) {
-    this.client = new Anthropic({ apiKey });
-    this.model = 'claude-sonnet-4-6';
+    this.client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com' });
+    this.model = 'deepseek-chat';
   }
 
   condenseTrackForDigest({ name, slug, document }, trackNotes = {}) {
@@ -109,17 +109,17 @@ Respond ONLY with valid JSON (no markdown, no explanation):
 
 STRICT LIMITS: top_priorities max 3 items, blockers max 2 items, recent_wins max 2 items, cross_track_priorities max 8 items.`;
 
-    const response = await this.client.messages.create({
+    const response = await this.client.chat.completions.create({
       model: this.model,
       max_tokens: 8192,
       temperature: 0.3,
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const resultText = response.content[0].text;
+    const resultText = response.choices[0].message.content;
     const outputChars = resultText.length;
-    console.log(`  Output: ~${outputChars} chars (~${Math.ceil(outputChars / 4)} tokens est.), stop_reason: ${response.stop_reason}`);
-    if (response.stop_reason === 'max_tokens') {
+    console.log(`  Output: ~${outputChars} chars (~${Math.ceil(outputChars / 4)} tokens est.), finish_reason: ${response.choices[0].finish_reason}`);
+    if (response.choices[0].finish_reason === 'length') {
       console.warn('  Warning: digest response truncated (max_tokens hit)');
     }
     const digest = this.parseDigest(resultText);

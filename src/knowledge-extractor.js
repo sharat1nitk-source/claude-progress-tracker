@@ -1,9 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 
 class KnowledgeExtractor {
   constructor(apiKey) {
-    this.client = new Anthropic({ apiKey });
-    this.model = 'claude-sonnet-4-6';
+    this.client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com' });
+    this.model = 'deepseek-chat';
   }
 
   prepareContext(conversation) {
@@ -136,15 +136,15 @@ Respond ONLY with valid JSON (no markdown, no explanation):
     const conversationContext = this.prepareContext(conversation);
     const prompt = this.buildPrompt(conversationContext, knownTracks);
 
-    const response = await this.client.messages.create({
+    const response = await this.client.chat.completions.create({
       model: this.model,
       max_tokens: 2048,
       temperature: 0.3,
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const resultText = response.content[0].text;
-    if (response.stop_reason === 'max_tokens') {
+    const resultText = response.choices[0].message.content;
+    if (response.choices[0].finish_reason === 'length') {
       console.warn('  Warning: response truncated (max_tokens hit)');
     }
     return this.parseResponse(resultText);
