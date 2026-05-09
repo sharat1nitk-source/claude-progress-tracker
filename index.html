@@ -258,6 +258,32 @@
       margin-top: 0.5rem;
     }
 
+    .track-expand-toggle {
+      background: none; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 0.7rem; padding: 0.1rem 0.3rem;
+      margin-left: 0.25rem; border-radius: 0.25rem;
+    }
+    .track-expand-toggle:hover { background: var(--bg-tertiary); color: var(--text); }
+
+    .track-details {
+      display: none; font-size: 0.85rem;
+      padding: 0.75rem; margin-top: 0.5rem;
+      background: var(--bg-tertiary); border-radius: var(--radius);
+    }
+    .track-details.open { display: block; }
+    .track-details h4 {
+      font-size: 0.8rem; font-weight: 700; color: var(--text-secondary);
+      text-transform: uppercase; letter-spacing: 0.04em;
+      margin: 0.75rem 0 0.35rem;
+    }
+    .track-details h4:first-child { margin-top: 0; }
+    .track-details ul { list-style: none; padding: 0; margin: 0 0 0.25rem; }
+    .track-details li {
+      padding: 0.15rem 0; font-size: 0.8rem;
+      color: var(--text-secondary);
+    }
+    .track-details li::before { content: '· '; color: var(--text-muted); }
+
     .section-title {
       font-size: 0.9rem;
       font-weight: 700;
@@ -1028,6 +1054,68 @@
       el.innerHTML = note ? esc(note) : '<span class="note-placeholder">Add note...</span>';
     }
 
+    function toggleTrackDetails(slug) {
+      const panel = document.getElementById(`details-${slug}`);
+      const toggle = document.getElementById(`toggle-${slug}`);
+      if (!panel || !toggle) return;
+      const isOpen = panel.classList.toggle('open');
+      toggle.textContent = isOpen ? '▼' : '▶';
+      if (isOpen && !panel.dataset.populated) {
+        const trackDoc = state.kbTracks.find(t => t.slug === slug);
+        if (trackDoc) {
+          panel.innerHTML = buildTrackDetailsHtml(trackDoc.document);
+          panel.dataset.populated = '1';
+        } else {
+          panel.innerHTML = '<em>No detailed data available</em>';
+        }
+      }
+    }
+
+    function buildTrackDetailsHtml(document) {
+      const section = (name) => {
+        const m = document.match(new RegExp(`## ${name}\\n([\\s\\S]*?)(?=\\n## |$)`));
+        if (!m) return [];
+        return m[1].split('\n').filter(l => l.startsWith('- ')).map(l => l.slice(2).trim());
+      };
+
+      const pending = section('Pending Tasks').slice(0, 8);
+      const decisions = section('Decisions Made').slice(0, 5);
+      const blockers = section('Blockers').slice(0, 5);
+      const insights = section('Key Insights').slice(0, 5);
+
+      // Parse conversation history table for last 3
+      const convMatch = document.match(/## Conversation History \(chronological\)\n\|.*\n\|.*\n([\s\S]*?)$/);
+      const recentConvs = [];
+      if (convMatch) {
+        const rows = convMatch[1].trim().split('\n').filter(l => l.startsWith('|'));
+        for (let i = Math.max(0, rows.length - 3); i < rows.length; i++) {
+          const cols = rows[i].split('|').map(c => c.trim());
+          if (cols.length >= 5) {
+            recentConvs.push({ date: cols[1], name: cols[2], type: cols[3], summary: cols[4] });
+          }
+        }
+      }
+
+      let html = '';
+      if (pending.length) {
+        html += '<h4>Next Steps</h4><ul>' + pending.map(p => `<li>${esc(p)}</li>`).join('') + '</ul>';
+      }
+      if (decisions.length) {
+        html += '<h4>Recent Decisions</h4><ul>' + decisions.map(d => `<li>${esc(d)}</li>`).join('') + '</ul>';
+      }
+      if (blockers.length) {
+        html += '<h4>Blockers</h4><ul>' + blockers.map(b => `<li>${esc(b)}</li>`).join('') + '</ul>';
+      }
+      if (insights.length) {
+        html += '<h4>Key Insights</h4><ul>' + insights.map(i => `<li>${esc(i)}</li>`).join('') + '</ul>';
+      }
+      if (recentConvs.length) {
+        html += '<h4>Recent Activity</h4><ul>' + recentConvs.map(c => `<li>${esc(c.date)} — ${esc(c.name || c.summary)}</li>`).join('') + '</ul>';
+      }
+      if (!html) html = '<em>No detailed data available</em>';
+      return html;
+    }
+
     async function moveTrackUp(slug) {
       const idx = state.trackOrder.indexOf(slug);
       if (idx > 0) {
@@ -1052,6 +1140,7 @@
     window.editTrackNote = editTrackNote;
     window.moveTrackUp = moveTrackUp;
     window.moveTrackDown = moveTrackDown;
+    window.toggleTrackDetails = toggleTrackDetails;
 
     // ============================================
     // FOCUS BRIEF
@@ -1161,6 +1250,7 @@
             <div class="track-header">
               <div style="display:flex;align-items:center;gap:0.5rem;">
                 <span class="track-name">${esc(t.name)}</span>
+                <button class="track-expand-toggle" onclick="toggleTrackDetails('${safeSlug}')" id="toggle-${safeSlug}">▶</button>
                 ${priority !== 'normal' ? `<span class="priority-badge priority-${priority}">${priority}</span>` : ''}
               </div>
               <div style="display:flex;gap:0.35rem;align-items:center;">
@@ -1174,6 +1264,7 @@
             </div>
             <div class="track-focus">${esc(t.current_focus || '')}</div>
             <div class="track-note" id="note-${safeSlug}" onclick="editTrackNote('${safeSlug}')">${state.trackNotes[t.slug] ? esc(state.trackNotes[t.slug]) : '<span class="note-placeholder">Add note...</span>'}</div>
+            <div class="track-details" id="details-${safeSlug}"></div>
         `;
 
         if (t.top_priorities && t.top_priorities.length > 0) {
