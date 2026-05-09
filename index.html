@@ -228,6 +228,19 @@
     .urgency-medium { color: var(--warning); font-weight: 600; }
     .urgency-low { color: var(--success); }
 
+    .track-note {
+      font-size: 0.8rem; color: var(--text-secondary); cursor: pointer;
+      padding: 0.2rem 0; border-bottom: 1px dashed transparent;
+      margin-bottom: 0.5rem; min-height: 1.4em;
+    }
+    .track-note:hover { border-bottom-color: var(--border); }
+    .note-placeholder { color: var(--text-muted); font-style: italic; }
+    .note-input {
+      width: 100%; font-size: 0.8rem; border: none;
+      border-bottom: 1px solid var(--primary); outline: none;
+      background: transparent; padding: 0.1rem 0; color: var(--text); font-family: inherit;
+    }
+
     .track-meta {
       font-size: 0.75rem;
       color: var(--text-muted);
@@ -679,6 +692,7 @@
       kbTracks: [],
       archivedTracks: [],
       trackPriorities: {},
+      trackNotes: {},
       queue: { queue: [] },
       chatHistory: [],
     };
@@ -934,6 +948,7 @@
         if (data) {
           state.archivedTracks = data.archivedTracks || [];
           state.trackPriorities = data.trackPriorities || {};
+          state.trackNotes = data.trackNotes || {};
         }
       } catch { /* no settings yet */ }
     }
@@ -942,6 +957,7 @@
       await driveUploadJSON(state.driveFolderId, 'kb-settings.json', {
         archivedTracks: state.archivedTracks,
         trackPriorities: state.trackPriorities,
+        trackNotes: state.trackNotes,
       });
     }
 
@@ -968,9 +984,40 @@
       renderBrief();
     }
 
+    function editTrackNote(slug) {
+      const el = document.getElementById(`note-${slug}`);
+      if (!el || el.querySelector('input')) return;
+      const current = state.trackNotes[slug] || '';
+      el.innerHTML = `<input class="note-input" type="text" value="${esc(current)}" placeholder="Add a note about this track..." maxlength="300">`;
+      const input = el.querySelector('input');
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.addEventListener('blur', () => saveTrackNote(slug, input.value.trim()));
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') input.blur();
+        if (e.key === 'Escape') { input.value = current; input.blur(); }
+      });
+    }
+
+    async function saveTrackNote(slug, value) {
+      if (value === (state.trackNotes[slug] || '')) { restoreNoteDisplay(slug); return; }
+      if (value) state.trackNotes[slug] = value;
+      else delete state.trackNotes[slug];
+      restoreNoteDisplay(slug);
+      await saveKBSettings();
+    }
+
+    function restoreNoteDisplay(slug) {
+      const el = document.getElementById(`note-${slug}`);
+      if (!el) return;
+      const note = state.trackNotes[slug] || '';
+      el.innerHTML = note ? esc(note) : '<span class="note-placeholder">Add note...</span>';
+    }
+
     window.archiveTrack = archiveTrack;
     window.unarchiveTrack = unarchiveTrack;
     window.setTrackPriority = setTrackPriority;
+    window.editTrackNote = editTrackNote;
 
     // ============================================
     // FOCUS BRIEF
@@ -1071,6 +1118,7 @@
               </div>
             </div>
             <div class="track-focus">${esc(t.current_focus || '')}</div>
+            <div class="track-note" id="note-${safeSlug}" onclick="editTrackNote('${safeSlug}')">${state.trackNotes[t.slug] ? esc(state.trackNotes[t.slug]) : '<span class="note-placeholder">Add note...</span>'}</div>
         `;
 
         if (t.top_priorities && t.top_priorities.length > 0) {
@@ -1183,6 +1231,8 @@
           if (pending.length) c += `Pending: ${pending.join(' | ')}\n`;
           if (blockers.length) c += `Blockers: ${blockers.join(' | ')}\n`;
           if (decisions.length) c += `Recent decisions: ${decisions.join(' | ')}\n`;
+          const note = state.trackNotes[trackDoc.slug] || '';
+          if (note) c += `User note: ${note}\n`;
           return c;
         }
 
@@ -1323,6 +1373,8 @@ STRICT LIMITS: top_priorities max 3 items, blockers max 2 items, recent_wins max
           context += `- **${t.name}** (slug: \`${t.slug}\`, status: ${t.status}${daysAgo}${priorityLabel})\n`;
           if (t.current_focus) context += `  Focus: ${t.current_focus}\n`;
           if (t.blockers?.length) context += `  Blockers: ${t.blockers.slice(0, 2).join('; ')}\n`;
+          const userNote = state.trackNotes[t.slug];
+          if (userNote) context += `  User note: ${userNote}\n`;
         }
         context += '\n';
       } else if (state.kbTracks?.length > 0) {
@@ -1415,20 +1467,20 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
           const data = await response.json();
 
           if (data.stop_reason === 'tool_use') {
-            const toolUseBlock = data.content.find(b => b.type === 'tool_use');
-            const slug = toolUseBlock.input.slug;
-            const track = state.kbTracks?.find(
-              t => t.slug === slug || t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') === slug
-            );
-            const trackContent = track
-              ? `# ${track.name}\n\n${track.document}`
-              : `No track found with slug "${slug}". Available: ${(state.kbTracks || []).map(t => t.slug).join(', ')}`;
+            const toolUseBlocks = data.content.filter(b => b.type === 'tool_use');
+            const toolResults = toolUseBlocks.map(toolUseBlock => {
+              const slug = toolUseBlock.input.slug;
+              const track = state.kbTracks?.find(
+                t => t.slug === slug || t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') === slug
+              );
+              const trackContent = track
+                ? `# ${track.name}\n\n${track.document}`
+                : `No track found with slug "${slug}". Available: ${(state.kbTracks || []).map(t => t.slug).join(', ')}`;
+              return { type: 'tool_result', tool_use_id: toolUseBlock.id, content: trackContent };
+            });
 
             apiMessages.push({ role: 'assistant', content: data.content });
-            apiMessages.push({
-              role: 'user',
-              content: [{ type: 'tool_result', tool_use_id: toolUseBlock.id, content: trackContent }]
-            });
+            apiMessages.push({ role: 'user', content: toolResults });
           } else {
             const textBlock = data.content.find(b => b.type === 'text');
             finalText = textBlock?.text || '';
@@ -1631,6 +1683,7 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
         await driveUploadJSON(state.driveFolderId, settingsFile, {
           archivedTracks: [],
           trackPriorities: {},
+          trackNotes: {},
         });
       }
     }

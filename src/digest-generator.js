@@ -6,7 +6,7 @@ class DigestGenerator {
     this.model = 'claude-sonnet-4-6';
   }
 
-  condenseTrackForDigest({ name, document }) {
+  condenseTrackForDigest({ name, slug, document }, trackNotes = {}) {
     const statusMatch = document.match(/Status: (\w+) \| Last active: (\d{4}-\d{2}-\d{2})/);
     const status = statusMatch?.[1] || 'unknown';
     const lastActive = statusMatch?.[2] || 'unknown';
@@ -31,10 +31,12 @@ class DigestGenerator {
     if (pending.length) condensed += `Pending: ${pending.join(' | ')}\n`;
     if (blockers.length) condensed += `Blockers: ${blockers.join(' | ')}\n`;
     if (decisions.length) condensed += `Recent decisions: ${decisions.join(' | ')}\n`;
+    const note = trackNotes[slug] || '';
+    if (note) condensed += `User note: ${note}\n`;
     return condensed;
   }
 
-  async generate(trackDocuments, synthesis, priorities = null, memories = null, trackPriorities = {}) {
+  async generate(trackDocuments, synthesis, priorities = null, memories = null, trackPriorities = {}, trackNotes = {}) {
     if (!trackDocuments || trackDocuments.length === 0) {
       console.log('No track documents to generate digest from.');
       return null;
@@ -42,7 +44,7 @@ class DigestGenerator {
 
     console.log('Generating visual digest...');
 
-    const condensedTracks = trackDocuments.map(t => this.condenseTrackForDigest(t)).join('\n');
+    const condensedTracks = trackDocuments.map(t => this.condenseTrackForDigest(t, trackNotes)).join('\n');
     const inputChars = condensedTracks.length + (synthesis || '').length;
     console.log(`  Input: ${trackDocuments.length} tracks, ~${inputChars} chars (~${Math.ceil(inputChars / 4)} tokens est.)`);
 

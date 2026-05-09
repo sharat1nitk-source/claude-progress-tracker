@@ -121,9 +121,10 @@ class ConversationProcessor {
       return {
         archivedTracks: new Set(data?.archivedTracks || []),
         trackPriorities: data?.trackPriorities || {},
+        trackNotes: data?.trackNotes || {},
       };
     } catch {
-      return { archivedTracks: new Set(), trackPriorities: {} };
+      return { archivedTracks: new Set(), trackPriorities: {}, trackNotes: {} };
     }
   }
 
@@ -309,7 +310,7 @@ class ConversationProcessor {
           const { trackDocuments, synthesis } = await this.builder.build(allResults);
 
           // Filter out archived tracks, load user-set track priorities
-          const { archivedTracks: archivedSet, trackPriorities } = await this.loadTrackSettings(folderId);
+          const { archivedTracks: archivedSet, trackPriorities, trackNotes } = await this.loadTrackSettings(folderId);
           const activeTrackDocs = trackDocuments.filter(t => !archivedSet.has(t.slug));
           if (archivedSet.size > 0) {
             console.log(`Excluded ${trackDocuments.length - activeTrackDocs.length} archived track(s)`);
@@ -328,7 +329,7 @@ class ConversationProcessor {
 
           const priorities = await this.loadPriorities(folderId);
           const digest = await this.digestGenerator.generate(
-            trimmedTrackDocs, synthesis, priorities, memories, trackPriorities
+            trimmedTrackDocs, synthesis, priorities, memories, trackPriorities, trackNotes
           );
 
           // 7. Bundle all output into single file (PWA pre-creates via OAuth)
