@@ -102,38 +102,9 @@ class ConversationProcessor {
       .map(m => m.content || m.text || m.summary);
   }
 
-  async ensureKnowledgeBaseFolders(parentFolderId) {
-    let kbFolderId = await this.findOrCreateFolder(parentFolderId, 'knowledge-base');
-    let tracksFolderId = await this.findOrCreateFolder(kbFolderId, 'tracks');
-    let metaFolderId = await this.findOrCreateFolder(kbFolderId, 'meta');
-    return { kbFolderId, tracksFolderId, metaFolderId };
-  }
-
-  async findOrCreateFolder(parentId, folderName) {
-    const existing = await this.driveAPI.listFiles(
-      parentId,
-      `name='${folderName}' and mimeType='application/vnd.google-apps.folder'`
-    );
-
-    if (existing.length > 0) return existing[0].id;
-
-    const response = await this.driveAPI.drive.files.create({
-      requestBody: {
-        name: folderName,
-        mimeType: 'application/vnd.google-apps.folder',
-        parents: [parentId],
-      },
-      fields: 'id',
-      supportsAllDrives: true,
-    });
-
-    console.log(`  Created folder: ${folderName}`);
-    return response.data.id;
-  }
-
-  async loadPriorities(kbFolderId) {
+  async loadPriorities(folderId) {
     try {
-      const data = await this.driveAPI.downloadJSON(kbFolderId, 'priorities.json');
+      const data = await this.driveAPI.downloadJSON(folderId, 'kb-priorities.json');
       if (data && Array.isArray(data.priorities)) {
         console.log(`  Loaded ${data.priorities.length} priority override(s)`);
         return data.priorities;
@@ -253,13 +224,18 @@ class ConversationProcessor {
           console.log(`To extract: ${toProcess.length} | Skipped: ${skipped.length}`);
 
           // 4. Knowledge extraction (per conversation)
-          let extractionResults = [];
+          let newExtractions = 0;
           if (toProcess.length > 0) {
-            extractionResults = await this.extractor.processConversations(toProcess, knownTracks);
+            const extractionResults = await this.extractor.processConversations(toProcess, knownTracks);
 
             for (const result of extractionResults) {
               if (result.success) {
-                this.stateManager.markProcessed(result.conversation, { projectName: result.knowledge.track });
+                this.stateManager.markProcessed(
+                  result.conversation,
+                  { projectName: result.knowledge.track },
+                  result.knowledge
+                );
+                newExtractions++;
                 totalExtracted++;
               } else {
                 totalErrors++;
@@ -269,14 +245,7 @@ class ConversationProcessor {
             await this.stateManager.saveState();
           }
 
-          // Also load previously extracted results from state for full knowledge base rebuild
-          // For conversations we skipped, reconstruct minimal extraction data from state
-          const allResults = [...extractionResults];
-          // New extractions are enough for the builder — skipped conversations'
-          // knowledge is already in the track docs from previous runs.
-          // We only need to rebuild if there are new extractions.
-
-          if (extractionResults.filter(r => r.success).length === 0 && !this.config.forceReprocess) {
+          if (newExtractions === 0 && !this.config.forceReprocess) {
             console.log('No new extractions — skipping knowledge base rebuild');
             item.status = 'completed';
             item.processedAt = new Date().toISOString();
@@ -284,43 +253,42 @@ class ConversationProcessor {
             continue;
           }
 
-          // 5. Ensure Drive folder structure
-          const { kbFolderId, tracksFolderId, metaFolderId } =
-            await this.ensureKnowledgeBaseFolders(this.config.folderId);
+          // Load ALL stored extraction results (new + previous runs) for full rebuild
+          const allResults = this.stateManager.getAllStoredResults();
+          console.log(`Building knowledge base from ${allResults.length} total conversations (${newExtractions} new)`);
 
-          // 6. Build knowledge base (track docs + synthesis)
-          // For a full rebuild, we'd need all extractions. For incremental,
-          // we load existing track docs from Drive and merge new results in.
-          // For now, build from all successful extractions in this run.
-          // Future: merge with existing track docs for incremental updates.
+
+          // 5. Build knowledge base from all stored extractions
+          const folderId = this.config.folderId;
           const memories = this.extractMemoryStrings(exportData.memories);
-          const { trackDocuments, synthesis } = await this.builder.build(
-            extractionResults.filter(r => r.success)
-          );
+          console.log(`Memories from export: ${memories.length}`);
 
-          // 7. Upload track docs to Drive
+          const { trackDocuments, synthesis } = await this.builder.build(allResults);
+
+          // 6. Upload track docs to Drive (flat, kb- prefixed)
           for (const { slug, document } of trackDocuments) {
             await this.driveAPI.uploadFile(
-              tracksFolderId, `${slug}.md`, document, 'text/markdown'
+              folderId, `kb-track-${slug}.md`, document, 'text/markdown'
             );
           }
+          console.log(`Uploaded ${trackDocuments.length} track doc(s)`);
 
-          // 8. Upload synthesis
+          // 7. Upload synthesis
           if (synthesis) {
             await this.driveAPI.uploadFile(
-              metaFolderId, 'synthesis.md', synthesis, 'text/markdown'
+              folderId, 'kb-synthesis.md', synthesis, 'text/markdown'
             );
           }
 
-          // 9. Load priorities and generate digest
-          const priorities = await this.loadPriorities(kbFolderId);
+          // 8. Load priorities and generate digest
+          const priorities = await this.loadPriorities(folderId);
           const digest = await this.digestGenerator.generate(
             trackDocuments, synthesis, priorities, memories
           );
 
           if (digest) {
             await this.driveAPI.uploadJSON(
-              kbFolderId, `digest-${item.email}.json`, digest
+              folderId, `kb-digest-${item.email}.json`, digest
             );
           }
 

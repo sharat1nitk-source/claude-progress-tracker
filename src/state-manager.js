@@ -129,7 +129,7 @@ class StateManager {
    * @param {Object} conversation
    * @param {Object} metadata - Extracted metadata
    */
-  markProcessed(conversation, metadata) {
+  markProcessed(conversation, metadata, knowledge = null) {
     const uuid = conversation.uuid;
     const contentHash = this.calculateHash(conversation);
 
@@ -138,7 +138,29 @@ class StateManager {
       lastModifiedTime: conversation.updated_at,
       contentHash,
       projectName: metadata?.projectName || 'Unknown',
+      knowledge: knowledge || null,
+      conversationName: conversation.name,
+      conversationCreatedAt: conversation.created_at,
+      conversationUpdatedAt: conversation.updated_at,
     };
+  }
+
+  getAllStoredResults() {
+    const results = [];
+    for (const [uuid, entry] of Object.entries(this.state.conversations)) {
+      if (!entry.knowledge) continue;
+      results.push({
+        conversation: {
+          uuid,
+          name: entry.conversationName || 'Unknown',
+          created_at: entry.conversationCreatedAt,
+          updated_at: entry.conversationUpdatedAt,
+        },
+        knowledge: entry.knowledge,
+        success: true,
+      });
+    }
+    return results;
   }
 
   /**

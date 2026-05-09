@@ -883,17 +883,6 @@
       return r.text();
     }
 
-    async function driveFindFolder(parentId, folderName) {
-      const resp = await gapi.client.drive.files.list({
-        q: `name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-        fields: 'files(id)',
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-      });
-      const files = resp.result.files || [];
-      return files.length > 0 ? files[0].id : null;
-    }
-
     async function driveUploadJSON(folderId, fileName, data) {
       const content = JSON.stringify(data, null, 2);
       const blob = new Blob([content], { type: 'application/json' });
@@ -939,14 +928,8 @@
       }
 
       try {
-        const kbFolderId = await driveFindFolder(state.driveFolderId, 'knowledge-base');
-        if (!kbFolderId) {
-          document.getElementById('briefEmpty').style.display = 'block';
-          return;
-        }
-
         const email = state.userInfo.email;
-        const digest = await driveDownloadJSON(kbFolderId, `digest-${email}.json`);
+        const digest = await driveDownloadJSON(state.driveFolderId, `kb-digest-${email}.json`);
         if (!digest) {
           document.getElementById('briefEmpty').style.display = 'block';
           return;
@@ -955,7 +938,6 @@
         state.digest = digest;
         state.digestCachedAt = Date.now();
 
-        // Cache for offline
         localStorage.setItem('digestCache', JSON.stringify(digest));
 
         renderBrief();
@@ -1073,18 +1055,12 @@
     // ============================================
 
     async function loadKnowledgeContext() {
-      const kbFolderId = await driveFindFolder(state.driveFolderId, 'knowledge-base');
-      if (!kbFolderId) return '';
-
       let context = '';
 
       // Load synthesis
       if (!state.synthesis || !state.synthesisCachedAt || Date.now() - state.synthesisCachedAt > CACHE_TTL) {
-        const metaFolderId = await driveFindFolder(kbFolderId, 'meta');
-        if (metaFolderId) {
-          state.synthesis = await driveDownloadText(metaFolderId, 'synthesis.md');
-          state.synthesisCachedAt = Date.now();
-        }
+        state.synthesis = await driveDownloadText(state.driveFolderId, 'kb-synthesis.md');
+        state.synthesisCachedAt = Date.now();
       }
 
       if (state.synthesis) {
@@ -1189,21 +1165,17 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
 
     async function savePriorityOverride(override) {
       try {
-        const kbFolderId = await driveFindFolder(state.driveFolderId, 'knowledge-base');
-        if (!kbFolderId) return;
-
-        let priorities = await driveDownloadJSON(kbFolderId, 'priorities.json');
+        let priorities = await driveDownloadJSON(state.driveFolderId, 'kb-priorities.json');
         if (!priorities || !priorities.priorities) {
           priorities = { priorities: [] };
         }
         priorities.priorities.push(override);
 
-        // Keep only last 20
         if (priorities.priorities.length > 20) {
           priorities.priorities = priorities.priorities.slice(-20);
         }
 
-        await driveUploadJSON(kbFolderId, 'priorities.json', priorities);
+        await driveUploadJSON(state.driveFolderId, 'kb-priorities.json', priorities);
       } catch (e) {
         console.error('Failed to save priority:', e);
       }
@@ -1315,18 +1287,19 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
         const size = exp.size ? (exp.size / (1024 * 1024)).toFixed(2) + ' MB' : '';
 
         let badge = '', action = '';
+        const safeName = exp.name.replace(/'/g, "\\'");
         if (status === 'pending') {
           badge = '<span class="export-status pending">Pending</span>';
-          action = '<button disabled class="small">In Queue</button>';
+          action = `<button class="secondary small" onclick="event.stopPropagation(); removeFromQueue('${exp.id}')">Remove</button>`;
         } else if (status === 'completed') {
           badge = '<span class="export-status completed">Completed</span>';
-          action = `<button class="secondary small" onclick="event.stopPropagation(); reprocessExport('${exp.id}','${exp.name.replace(/'/g, "\\'")}')">Reprocess</button>`;
+          action = `<button class="secondary small" onclick="event.stopPropagation(); removeFromQueue('${exp.id}')">Remove</button> <button class="secondary small" onclick="event.stopPropagation(); reprocessExport('${exp.id}','${safeName}')">Reprocess</button>`;
         } else if (status === 'failed') {
           badge = '<span class="export-status failed">Failed</span>';
-          action = `<button class="small" onclick="event.stopPropagation(); addToQueue('${exp.id}','${exp.name.replace(/'/g, "\\'")}')">Retry</button>`;
+          action = `<button class="secondary small" onclick="event.stopPropagation(); removeFromQueue('${exp.id}')">Remove</button> <button class="small" onclick="event.stopPropagation(); addToQueue('${exp.id}','${safeName}')">Retry</button>`;
         } else {
           badge = '';
-          action = `<button class="small" onclick="event.stopPropagation(); addToQueue('${exp.id}','${exp.name.replace(/'/g, "\\'")}')">Add to Queue</button>`;
+          action = `<button class="small" onclick="event.stopPropagation(); addToQueue('${exp.id}','${safeName}')">Add to Queue</button>`;
         }
 
         return `
@@ -1368,12 +1341,20 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
       await addToQueue(zipFileId, zipFileName);
     }
 
+    async function removeFromQueue(zipFileId) {
+      state.queue.queue = state.queue.queue.filter(q => q.zipFileId !== zipFileId);
+      await saveQueue();
+      showMessage('Removed from queue');
+      loadExportsTab();
+    }
+
     async function saveQueue() {
       await driveUploadJSON(state.driveFolderId, 'process-queue.json', state.queue);
     }
 
     window.addToQueue = addToQueue;
     window.reprocessExport = reprocessExport;
+    window.removeFromQueue = removeFromQueue;
 
     // ============================================
     // TAB NAVIGATION
