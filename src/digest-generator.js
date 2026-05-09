@@ -34,7 +34,7 @@ class DigestGenerator {
     return condensed;
   }
 
-  async generate(trackDocuments, synthesis, priorities = null, memories = null) {
+  async generate(trackDocuments, synthesis, priorities = null, memories = null, trackPriorities = {}) {
     if (!trackDocuments || trackDocuments.length === 0) {
       console.log('No track documents to generate digest from.');
       return null;
@@ -58,6 +58,15 @@ class DigestGenerator {
     if (memories && memories.length > 0) {
       const memoryLines = memories.slice(0, 50).map(m => `- ${m}`).join('\n');
       contextBlock += `\n\n## User's Claude.ai Memories\nThese are the user's own stated facts, preferences, and context:\n${memoryLines}`;
+    }
+
+    const high = Object.entries(trackPriorities).filter(([, v]) => v === 'high').map(([k]) => k);
+    const low = Object.entries(trackPriorities).filter(([, v]) => v === 'low').map(([k]) => k);
+    if (high.length || low.length) {
+      contextBlock += '\n\n## User-Set Track Priorities';
+      if (high.length) contextBlock += `\nHigh priority (user explicitly elevated): ${high.join(', ')}`;
+      if (low.length) contextBlock += `\nLow priority (user explicitly deprioritized): ${low.join(', ')}`;
+      contextBlock += '\nThese MUST influence focus_recommendation and cross_track_priorities ordering.';
     }
 
     const prompt = `You are generating a structured digest from a user's personal knowledge base. This powers their daily focus dashboard.

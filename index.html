@@ -198,6 +198,21 @@
     .status-blocked { background: #fee2e2; color: #991b1b; }
     .status-completed { background: #e0e7ff; color: #3730a3; }
 
+    .priority-badge {
+      font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.5rem;
+      border-radius: 1rem; letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .priority-badge.priority-high { background: #dcfce7; color: #166534; }
+    .priority-badge.priority-low { background: #f1f5f9; color: #64748b; }
+    .priority-btn {
+      background: none; border: 1px solid var(--border); border-radius: 0.25rem;
+      padding: 0.1rem 0.4rem; font-size: 0.75rem; cursor: pointer; line-height: 1.2;
+      color: var(--text-muted); min-height: unset;
+    }
+    .priority-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .priority-btn.active-high { background: #dcfce7; border-color: #166534; color: #166534; }
+    .priority-btn.active-low { background: #f1f5f9; border-color: #64748b; color: #64748b; }
+
     .track-focus { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.75rem; }
 
     .priority-list { list-style: none; padding: 0; margin: 0 0 0.5rem 0; }
@@ -663,6 +678,7 @@
       synthesisCachedAt: null,
       kbTracks: [],
       archivedTracks: [],
+      trackPriorities: {},
       queue: { queue: [] },
       chatHistory: [],
     };
@@ -917,6 +933,7 @@
         const data = await driveDownloadJSON(state.driveFolderId, 'kb-settings.json');
         if (data) {
           state.archivedTracks = data.archivedTracks || [];
+          state.trackPriorities = data.trackPriorities || {};
         }
       } catch { /* no settings yet */ }
     }
@@ -924,6 +941,7 @@
     async function saveKBSettings() {
       await driveUploadJSON(state.driveFolderId, 'kb-settings.json', {
         archivedTracks: state.archivedTracks,
+        trackPriorities: state.trackPriorities,
       });
     }
 
@@ -943,8 +961,16 @@
       showMessage('Track restored');
     }
 
+    async function setTrackPriority(slug, level) {
+      if (level === 'normal') delete state.trackPriorities[slug];
+      else state.trackPriorities[slug] = level;
+      await saveKBSettings();
+      renderBrief();
+    }
+
     window.archiveTrack = archiveTrack;
     window.unarchiveTrack = unarchiveTrack;
+    window.setTrackPriority = setTrackPriority;
 
     // ============================================
     // FOCUS BRIEF
@@ -1005,28 +1031,41 @@
         <div class="hero">
           <h2>What to Focus On</h2>
           <p>${esc(d.focus_recommendation)}</p>
-          <div class="meta">Last updated: ${genDate}</div>
+          <div class="meta" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+            <span>Last updated: ${genDate}</span>
+            <button id="reevaluateBtn" class="secondary small" onclick="reevaluateDigest()" title="Regenerate focus brief with current priorities (~$0.12)">Re-evaluate</button>
+          </div>
         </div>
       `;
 
-      // Sort tracks: blocked > stalling > active > completed
+      // Sort: priority first (high → normal → low), then status within
+      const priorityOrder = { high: 0, normal: 1, low: 2 };
       const statusOrder = { blocked: 0, stalling: 1, active: 2, completed: 3 };
       const archived = new Set(state.archivedTracks);
       const activeTracks = (d.tracks || []).filter(t => !archived.has(t.slug));
       const archivedTracksList = (d.tracks || []).filter(t => archived.has(t.slug));
 
-      const sortedTracks = [...activeTracks].sort(
-        (a, b) => (statusOrder[a.status] ?? 2) - (statusOrder[b.status] ?? 2)
-      );
+      const sortedTracks = [...activeTracks].sort((a, b) => {
+        const pa = priorityOrder[state.trackPriorities[a.slug] || 'normal'];
+        const pb = priorityOrder[state.trackPriorities[b.slug] || 'normal'];
+        if (pa !== pb) return pa - pb;
+        return (statusOrder[a.status] ?? 2) - (statusOrder[b.status] ?? 2);
+      });
 
       for (const t of sortedTracks) {
         const statusClass = `status-${t.status || 'active'}`;
         const safeSlug = esc(t.slug);
+        const priority = state.trackPriorities[t.slug] || 'normal';
         html += `
           <div class="track-card">
             <div class="track-header">
-              <span class="track-name">${esc(t.name)}</span>
-              <div style="display:flex;gap:0.5rem;align-items:center;">
+              <div style="display:flex;align-items:center;gap:0.5rem;">
+                <span class="track-name">${esc(t.name)}</span>
+                ${priority !== 'normal' ? `<span class="priority-badge priority-${priority}">${priority}</span>` : ''}
+              </div>
+              <div style="display:flex;gap:0.35rem;align-items:center;">
+                <button class="priority-btn ${priority === 'high' ? 'active-high' : ''}" onclick="setTrackPriority('${safeSlug}','${priority === 'high' ? 'normal' : 'high'}')" title="${priority === 'high' ? 'Remove high priority' : 'Set high priority'}">▲</button>
+                <button class="priority-btn ${priority === 'low' ? 'active-low' : ''}" onclick="setTrackPriority('${safeSlug}','${priority === 'low' ? 'normal' : 'low'}')" title="${priority === 'low' ? 'Remove low priority' : 'Set low priority'}">▼</button>
                 <span class="status-badge ${statusClass}">${(t.status || 'active').toUpperCase()}</span>
                 <button class="secondary small" onclick="archiveTrack('${safeSlug}')" title="Archive this track">Archive</button>
               </div>
@@ -1111,6 +1150,158 @@
       el.innerHTML = html;
     }
 
+    async function reevaluateDigest() {
+      if (!state.anthropicApiKey) {
+        showMessage('Add your Anthropic API Key in Settings to re-evaluate', 'error');
+        document.getElementById('settingsPanel').classList.add('open');
+        return;
+      }
+      if (!state.kbTracks || state.kbTracks.length === 0) {
+        showMessage('No knowledge base loaded yet', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('reevaluateBtn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Re-evaluating...'; }
+
+      try {
+        function condenseTrack(trackDoc) {
+          const doc = trackDoc.document;
+          const sm = doc.match(/Status: (\w+) \| Last active: (\d{4}-\d{2}-\d{2})/);
+          const status = sm?.[1] || 'unknown', lastActive = sm?.[2] || 'unknown';
+          const extractSection = (name) => {
+            const m = doc.match(new RegExp(`## ${name}\\n([\\s\\S]*?)(?=\\n## |$)`));
+            return m ? m[1].split('\n').filter(l => l.startsWith('- ')).map(l => l.slice(2).trim()) : [];
+          };
+          const csm = doc.match(/## Current State\n([\s\S]*?)(?=\n## |$)/);
+          const currentState = csm ? csm[1].trim().split(/\. +/).slice(0, 2).join('. ') : '';
+          const pending = extractSection('Pending Tasks').slice(0, 5);
+          const blockers = extractSection('Blockers').slice(0, 3);
+          const decisions = extractSection('Decisions Made').slice(-3);
+          let c = `### ${trackDoc.name} (status: ${status}, last active: ${lastActive})\n`;
+          if (currentState) c += `Current: ${currentState}\n`;
+          if (pending.length) c += `Pending: ${pending.join(' | ')}\n`;
+          if (blockers.length) c += `Blockers: ${blockers.join(' | ')}\n`;
+          if (decisions.length) c += `Recent decisions: ${decisions.join(' | ')}\n`;
+          return c;
+        }
+
+        const archived = new Set(state.archivedTracks);
+        const activeTracks = state.kbTracks.filter(t => !archived.has(t.slug));
+        const condensed = activeTracks.map(condenseTrack).join('\n');
+
+        let contextBlock = `## Track Snapshots\n\n${condensed}\n\n## Cross-Track Synthesis\n\n${state.synthesis || 'No synthesis available.'}`;
+
+        const high = Object.entries(state.trackPriorities).filter(([,v]) => v === 'high').map(([k]) => k);
+        const low = Object.entries(state.trackPriorities).filter(([,v]) => v === 'low').map(([k]) => k);
+        if (high.length || low.length) {
+          contextBlock += '\n\n## User-Set Track Priorities\n';
+          if (high.length) contextBlock += `High priority (user explicitly elevated): ${high.join(', ')}\n`;
+          if (low.length) contextBlock += `Low priority (user explicitly deprioritized): ${low.join(', ')}\n`;
+          contextBlock += 'These MUST influence focus_recommendation and cross_track_priorities ordering.';
+        }
+
+        const prompt = `You are generating a structured digest from a user's personal knowledge base. This powers their daily focus dashboard.
+
+${contextBlock}
+
+Generate a JSON digest. Be specific and actionable. The focus_recommendation should be opinionated: tell the user exactly what to work on first and why.
+
+Keep all text SHORT — one sentence max per field. Limit arrays strictly to the counts shown.
+
+Respond ONLY with valid JSON (no markdown, no explanation):
+{
+  "generated_at": "${new Date().toISOString()}",
+  "focus_recommendation": "2-3 sentences max",
+  "tracks": [
+    {
+      "name": "Track Name",
+      "slug": "track-name",
+      "status": "active|stalling|blocked|completed",
+      "status_reason": "one short sentence",
+      "current_focus": "one short sentence",
+      "top_priorities": [{ "action": "short phrase", "why": "short phrase", "urgency": "high|medium|low" }],
+      "blockers": ["one phrase each"],
+      "recent_wins": ["one phrase each"],
+      "days_since_active": 0
+    }
+  ],
+  "cross_track_priorities": [
+    { "rank": 1, "action": "short phrase", "track": "name", "why": "short phrase", "urgency": "high|medium|low" }
+  ],
+  "connections": [],
+  "stalling_tracks": []
+}
+
+STRICT LIMITS: top_priorities max 3 items, blockers max 2 items, recent_wins max 2 items, cross_track_priorities max 8 items.`;
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': state.anthropicApiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
+          body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 8192, temperature: 0.3, messages: [{ role: 'user', content: prompt }] }),
+        });
+
+        if (!response.ok) throw new Error(`API error ${response.status}: ${await response.text()}`);
+
+        const data = await response.json();
+        let resultText = data.content[0].text.trim();
+        if (resultText.startsWith('```json')) resultText = resultText.replace(/```json\s*/, '').replace(/```\s*$/, '');
+        else if (resultText.startsWith('```')) resultText = resultText.replace(/```\s*/, '').replace(/```\s*$/, '');
+
+        const digest = JSON.parse(resultText);
+        if (!digest.tracks || !Array.isArray(digest.tracks)) throw new Error('Invalid digest: missing tracks');
+        if (!digest.cross_track_priorities) digest.cross_track_priorities = [];
+        if (!digest.connections) digest.connections = [];
+        if (!digest.stalling_tracks) digest.stalling_tracks = [];
+        for (const t of digest.tracks) {
+          if (!t.slug) t.slug = t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+          if (!t.top_priorities) t.top_priorities = [];
+          if (!t.blockers) t.blockers = [];
+          if (!t.recent_wins) t.recent_wins = [];
+        }
+
+        // Enrich days_since_active from full track docs
+        const now = new Date();
+        for (const t of digest.tracks) {
+          const doc = state.kbTracks.find(d => d.slug === t.slug || d.name === t.name);
+          if (!doc) continue;
+          const m = doc.document.match(/Last active: (\d{4}-\d{2}-\d{2})/);
+          if (m) t.days_since_active = Math.floor((now - new Date(m[1])) / 86400000);
+        }
+        digest.stalling_tracks = digest.tracks
+          .filter(t => t.days_since_active >= 7 && t.status !== 'completed')
+          .map(t => `${t.name} — ${t.days_since_active} days inactive`);
+
+        state.digest = digest;
+        state.digestCachedAt = Date.now();
+        renderBrief();
+
+        // Persist updated digest to Drive
+        const email = state.userInfo?.email;
+        if (email && state.driveFolderId) {
+          await driveUploadJSON(state.driveFolderId, `kb-output-${email}.json`, {
+            tracks: state.kbTracks,
+            synthesis: state.synthesis || null,
+            digest,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+
+        showMessage('Brief re-evaluated');
+      } catch (e) {
+        showMessage('Re-evaluation failed: ' + e.message, 'error');
+        console.error('Re-evaluate error:', e);
+      } finally {
+        const btn = document.getElementById('reevaluateBtn');
+        if (btn) { btn.disabled = false; btn.textContent = 'Re-evaluate'; }
+      }
+    }
+
     // ============================================
     // CHAT
     // ============================================
@@ -1127,7 +1318,9 @@
         context += '## Available Tracks (use get_track_details for full details)\n';
         for (const t of state.digest.tracks) {
           const daysAgo = t.days_since_active > 0 ? `, ${t.days_since_active}d ago` : '';
-          context += `- **${t.name}** (slug: \`${t.slug}\`, status: ${t.status}${daysAgo})\n`;
+          const userPriority = state.trackPriorities[t.slug];
+          const priorityLabel = userPriority ? ` [USER PRIORITY: ${userPriority.toUpperCase()}]` : '';
+          context += `- **${t.name}** (slug: \`${t.slug}\`, status: ${t.status}${daysAgo}${priorityLabel})\n`;
           if (t.current_focus) context += `  Focus: ${t.current_focus}\n`;
           if (t.blockers?.length) context += `  Blockers: ${t.blockers.slice(0, 2).join('; ')}\n`;
         }
@@ -1437,6 +1630,7 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
         console.log('Pre-creating KB settings file:', settingsFile);
         await driveUploadJSON(state.driveFolderId, settingsFile, {
           archivedTracks: [],
+          trackPriorities: {},
         });
       }
     }

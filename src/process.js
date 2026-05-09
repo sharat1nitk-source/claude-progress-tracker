@@ -115,16 +115,16 @@ class ConversationProcessor {
     return [];
   }
 
-  async loadArchivedTracks(folderId) {
+  async loadTrackSettings(folderId) {
     try {
       const data = await this.driveAPI.downloadJSON(folderId, 'kb-settings.json');
-      if (data && Array.isArray(data.archivedTracks)) {
-        return new Set(data.archivedTracks);
-      }
+      return {
+        archivedTracks: new Set(data?.archivedTracks || []),
+        trackPriorities: data?.trackPriorities || {},
+      };
     } catch {
-      // No settings file yet
+      return { archivedTracks: new Set(), trackPriorities: {} };
     }
-    return new Set();
   }
 
   async cleanupQueue(queue) {
@@ -308,11 +308,14 @@ class ConversationProcessor {
 
           const { trackDocuments, synthesis } = await this.builder.build(allResults);
 
-          // Filter out archived tracks
-          const archivedSet = await this.loadArchivedTracks(folderId);
+          // Filter out archived tracks, load user-set track priorities
+          const { archivedTracks: archivedSet, trackPriorities } = await this.loadTrackSettings(folderId);
           const activeTrackDocs = trackDocuments.filter(t => !archivedSet.has(t.slug));
           if (archivedSet.size > 0) {
             console.log(`Excluded ${trackDocuments.length - activeTrackDocs.length} archived track(s)`);
+          }
+          if (Object.keys(trackPriorities).length > 0) {
+            console.log(`Track priorities: ${JSON.stringify(trackPriorities)}`);
           }
 
           // 6. Load priorities and generate digest (only active tracks)
@@ -325,7 +328,7 @@ class ConversationProcessor {
 
           const priorities = await this.loadPriorities(folderId);
           const digest = await this.digestGenerator.generate(
-            trimmedTrackDocs, synthesis, priorities, memories
+            trimmedTrackDocs, synthesis, priorities, memories, trackPriorities
           );
 
           // 7. Bundle all output into single file (PWA pre-creates via OAuth)
