@@ -236,7 +236,22 @@ class ConversationProcessor {
             this.config.forceReprocess
           );
 
-          console.log(`To extract: ${toProcess.length} | Skipped: ${skipped.length}`);
+          // Check for state entries missing knowledge (migration from old format)
+          const needsMigration = validConversations.filter(c => {
+            const entry = this.stateManager.state.conversations[c.uuid];
+            return entry && !entry.knowledge;
+          });
+
+          if (needsMigration.length > 0) {
+            console.log(`${needsMigration.length} conversations need knowledge extraction (state migration)`);
+            for (const c of needsMigration) {
+              if (!toProcess.find(p => p.uuid === c.uuid)) {
+                toProcess.push(c);
+              }
+            }
+          }
+
+          console.log(`To extract: ${toProcess.length} | Skipped: ${skipped.length - needsMigration.length}`);
 
           // 4. Knowledge extraction (per conversation)
           let newExtractions = 0;
@@ -260,16 +275,17 @@ class ConversationProcessor {
             await this.stateManager.saveState();
           }
 
-          if (newExtractions === 0 && !this.config.forceReprocess) {
-            console.log('No new extractions — skipping knowledge base rebuild');
+          // Load ALL stored extraction results for full rebuild
+          const allResults = this.stateManager.getAllStoredResults();
+
+          if (allResults.length === 0) {
+            console.log('No extraction results available — nothing to build');
             item.status = 'completed';
             item.processedAt = new Date().toISOString();
             item.conversationsExtracted = 0;
             continue;
           }
 
-          // Load ALL stored extraction results (new + previous runs) for full rebuild
-          const allResults = this.stateManager.getAllStoredResults();
           console.log(`Building knowledge base from ${allResults.length} total conversations (${newExtractions} new)`);
 
 
