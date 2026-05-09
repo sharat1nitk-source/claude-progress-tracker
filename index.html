@@ -302,6 +302,12 @@
     }
     .track-details h4:first-child { margin-top: 0; }
     .track-details ul { list-style: none; padding: 0; margin: 0 0 0.25rem; }
+    .sparkline { display: flex; align-items: flex-end; gap: 2px; height: 32px; margin: 0.35rem 0; }
+    .sparkline-bar {
+      width: 6px; border-radius: 1px 1px 0 0;
+      background: var(--primary-light); min-height: 2px; transition: height 0.2s;
+    }
+    .sparkline-bar.high { background: var(--primary); }
     .track-details li {
       padding: 0.15rem 0; font-size: 0.8rem;
       color: var(--text-secondary);
@@ -1120,20 +1126,52 @@
       const blockers = section('Blockers').slice(0, 5);
       const insights = section('Key Insights').slice(0, 5);
 
-      // Parse conversation history table for last 3
+      // Parse ALL conversation dates from history table
       const convMatch = document.match(/## Conversation History \(chronological\)\n\|.*\n\|.*\n([\s\S]*?)$/);
+      const allDates = [];
       const recentConvs = [];
       if (convMatch) {
         const rows = convMatch[1].trim().split('\n').filter(l => l.startsWith('|'));
-        for (let i = Math.max(0, rows.length - 3); i < rows.length; i++) {
+        for (let i = 0; i < rows.length; i++) {
           const cols = rows[i].split('|').map(c => c.trim());
           if (cols.length >= 5) {
-            recentConvs.push({ date: cols[1], name: cols[2], type: cols[3], summary: cols[4] });
+            allDates.push(cols[1]);
+            if (i >= rows.length - 3) {
+              recentConvs.push({ date: cols[1], name: cols[2], type: cols[3], summary: cols[4] });
+            }
           }
         }
       }
 
+      // Build sparkline: group dates by week, last 12 weeks
+      let sparkHtml = '';
+      if (allDates.length > 0) {
+        const now = new Date();
+        const weekBuckets = [];
+        for (let w = 11; w >= 0; w--) {
+          const weekStart = new Date(now);
+          weekStart.setDate(weekStart.getDate() - weekStart.getDay() - w * 7);
+          weekStart.setHours(0, 0, 0, 0);
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekEnd.getDate() + 7);
+          let count = 0;
+          for (const d of allDates) {
+            const dt = new Date(d);
+            if (dt >= weekStart && dt < weekEnd) count++;
+          }
+          weekBuckets.push(count);
+        }
+        const maxCount = Math.max(1, ...weekBuckets);
+        const bars = weekBuckets.map(c => {
+          const h = Math.max(2, Math.round((c / maxCount) * 28));
+          const cls = c > 0 ? (c >= maxCount * 0.7 ? 'high' : '') : '';
+          return `<div class="sparkline-bar ${cls}" style="height:${h}px" title="${c} conversation${c !== 1 ? 's' : ''}"></div>`;
+        }).join('');
+        sparkHtml = `<div class="sparkline">${bars}</div>`;
+      }
+
       let html = '';
+      if (sparkHtml) html += sparkHtml;
       if (pending.length) {
         html += '<h4>Next Steps</h4><ul>' + pending.map(p => `<li>${esc(p)}</li>`).join('') + '</ul>';
       }
