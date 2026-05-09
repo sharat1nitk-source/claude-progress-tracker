@@ -138,12 +138,15 @@ Respond ONLY with valid JSON (no markdown, no explanation):
 
     const response = await this.client.messages.create({
       model: this.model,
-      max_tokens: 1024,
+      max_tokens: 2048,
       temperature: 0.3,
       messages: [{ role: 'user', content: prompt }],
     });
 
     const resultText = response.content[0].text;
+    if (response.stop_reason === 'max_tokens') {
+      console.warn('  Warning: response truncated (max_tokens hit)');
+    }
     return this.parseResponse(resultText);
   }
 

@@ -661,6 +661,8 @@
       digestCachedAt: null,
       synthesis: null,
       synthesisCachedAt: null,
+      kbTracks: [],
+      archivedTracks: [],
       queue: { queue: [] },
       chatHistory: [],
     };
@@ -731,7 +733,8 @@
         const valid = await loadUserInfo();
         if (valid) {
           updateAuthUI(true);
-          await loadDigest();
+          await loadKBSettings();
+          await loadKBOutput();
         } else {
           localStorage.removeItem('accessToken');
           localStorage.removeItem('tokenExpiry');
@@ -770,7 +773,8 @@
       gapi.client.setToken({ access_token: params.access_token });
       await loadUserInfo();
       updateAuthUI(true);
-      await loadDigest();
+      await loadKBSettings();
+      await loadKBOutput();
       showMessage('Signed in successfully!');
     }
 
@@ -806,8 +810,11 @@
       state.accessToken = null;
       state.userInfo = null;
       state.digest = null;
+      state.synthesis = null;
+      state.kbTracks = [];
       localStorage.removeItem('accessToken');
       localStorage.removeItem('tokenExpiry');
+      localStorage.removeItem('kbOutputCache');
       gapi.client.setToken(null);
       updateAuthUI(false);
       showMessage('Signed out');
@@ -867,22 +874,6 @@
       return r.json();
     }
 
-    async function driveDownloadText(folderId, fileName) {
-      const resp = await gapi.client.drive.files.list({
-        q: `name='${fileName}' and '${folderId}' in parents and trashed=false`,
-        fields: 'files(id)',
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-      });
-      const files = resp.result.files || [];
-      if (files.length === 0) return null;
-      const r = await fetch(`https://www.googleapis.com/drive/v3/files/${files[0].id}?alt=media&supportsAllDrives=true`, {
-        headers: { Authorization: `Bearer ${state.accessToken}` }
-      });
-      if (!r.ok) return null;
-      return r.text();
-    }
-
     async function driveUploadJSON(folderId, fileName, data) {
       const content = JSON.stringify(data, null, 2);
       const blob = new Blob([content], { type: 'application/json' });
@@ -918,10 +909,48 @@
     }
 
     // ============================================
+    // KB SETTINGS (archived tracks, etc.)
+    // ============================================
+
+    async function loadKBSettings() {
+      try {
+        const data = await driveDownloadJSON(state.driveFolderId, 'kb-settings.json');
+        if (data) {
+          state.archivedTracks = data.archivedTracks || [];
+        }
+      } catch { /* no settings yet */ }
+    }
+
+    async function saveKBSettings() {
+      await driveUploadJSON(state.driveFolderId, 'kb-settings.json', {
+        archivedTracks: state.archivedTracks,
+      });
+    }
+
+    async function archiveTrack(slug) {
+      if (!state.archivedTracks.includes(slug)) {
+        state.archivedTracks.push(slug);
+        await saveKBSettings();
+        renderBrief();
+        showMessage('Track archived');
+      }
+    }
+
+    async function unarchiveTrack(slug) {
+      state.archivedTracks = state.archivedTracks.filter(s => s !== slug);
+      await saveKBSettings();
+      renderBrief();
+      showMessage('Track restored');
+    }
+
+    window.archiveTrack = archiveTrack;
+    window.unarchiveTrack = unarchiveTrack;
+
+    // ============================================
     // FOCUS BRIEF
     // ============================================
 
-    async function loadDigest() {
+    async function loadKBOutput() {
       if (state.digest && state.digestCachedAt && Date.now() - state.digestCachedAt < CACHE_TTL) {
         renderBrief();
         return;
@@ -929,26 +958,32 @@
 
       try {
         const email = state.userInfo.email;
-        const fileName = `kb-digest-${email}.json`;
-        console.log('Looking for digest:', fileName, 'in folder:', state.driveFolderId);
-        const digest = await driveDownloadJSON(state.driveFolderId, fileName);
-        if (!digest) {
-          console.log('Digest file not found');
+        const fileName = `kb-output-${email}.json`;
+        console.log('Looking for KB output:', fileName, 'in folder:', state.driveFolderId);
+        const kbOutput = await driveDownloadJSON(state.driveFolderId, fileName);
+        if (!kbOutput || !kbOutput.digest) {
+          console.log('KB output file not found or empty');
           document.getElementById('briefEmpty').style.display = 'block';
           return;
         }
 
-        state.digest = digest;
+        state.digest = kbOutput.digest;
+        state.synthesis = kbOutput.synthesis;
+        state.kbTracks = kbOutput.tracks || [];
         state.digestCachedAt = Date.now();
+        state.synthesisCachedAt = Date.now();
 
-        localStorage.setItem('digestCache', JSON.stringify(digest));
+        localStorage.setItem('kbOutputCache', JSON.stringify(kbOutput));
 
         renderBrief();
       } catch (e) {
-        console.error('Failed to load digest:', e);
-        const cached = localStorage.getItem('digestCache');
+        console.error('Failed to load KB output:', e);
+        const cached = localStorage.getItem('kbOutputCache');
         if (cached) {
-          state.digest = JSON.parse(cached);
+          const kbOutput = JSON.parse(cached);
+          state.digest = kbOutput.digest;
+          state.synthesis = kbOutput.synthesis;
+          state.kbTracks = kbOutput.tracks || [];
           renderBrief();
           showMessage('Loaded from cache (offline)');
         } else {
@@ -976,17 +1011,25 @@
 
       // Sort tracks: blocked > stalling > active > completed
       const statusOrder = { blocked: 0, stalling: 1, active: 2, completed: 3 };
-      const sortedTracks = [...(d.tracks || [])].sort(
+      const archived = new Set(state.archivedTracks);
+      const activeTracks = (d.tracks || []).filter(t => !archived.has(t.slug));
+      const archivedTracksList = (d.tracks || []).filter(t => archived.has(t.slug));
+
+      const sortedTracks = [...activeTracks].sort(
         (a, b) => (statusOrder[a.status] ?? 2) - (statusOrder[b.status] ?? 2)
       );
 
       for (const t of sortedTracks) {
         const statusClass = `status-${t.status || 'active'}`;
+        const safeSlug = esc(t.slug);
         html += `
           <div class="track-card">
             <div class="track-header">
               <span class="track-name">${esc(t.name)}</span>
-              <span class="status-badge ${statusClass}">${(t.status || 'active').toUpperCase()}</span>
+              <div style="display:flex;gap:0.5rem;align-items:center;">
+                <span class="status-badge ${statusClass}">${(t.status || 'active').toUpperCase()}</span>
+                <button class="secondary small" onclick="archiveTrack('${safeSlug}')" title="Archive this track">Archive</button>
+              </div>
             </div>
             <div class="track-focus">${esc(t.current_focus || '')}</div>
         `;
@@ -1016,6 +1059,21 @@
         }
 
         html += '</div>';
+      }
+
+      // Archived tracks (collapsed)
+      if (archivedTracksList.length > 0) {
+        html += `<div class="section-title">Archived (${archivedTracksList.length})</div>`;
+        for (const t of archivedTracksList) {
+          const safeSlug = esc(t.slug);
+          html += `
+            <div class="track-card" style="opacity: 0.6;">
+              <div class="track-header">
+                <span class="track-name">${esc(t.name)}</span>
+                <button class="secondary small" onclick="unarchiveTrack('${safeSlug}')">Restore</button>
+              </div>
+            </div>`;
+        }
       }
 
       // Cross-track priorities
@@ -1060,10 +1118,17 @@
     async function loadKnowledgeContext() {
       let context = '';
 
-      // Load synthesis
+      // Load KB output if not cached
       if (!state.synthesis || !state.synthesisCachedAt || Date.now() - state.synthesisCachedAt > CACHE_TTL) {
-        state.synthesis = await driveDownloadText(state.driveFolderId, 'kb-synthesis.md');
-        state.synthesisCachedAt = Date.now();
+        await loadKBOutput();
+      }
+
+      // Full track documents for rich context
+      if (state.kbTracks && state.kbTracks.length > 0) {
+        context += '## Track Documents\n\n';
+        for (const t of state.kbTracks) {
+          context += `### ${t.name}\n${t.document}\n\n---\n\n`;
+        }
       }
 
       if (state.synthesis) {
@@ -1320,6 +1385,28 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
       }).join('');
     }
 
+    async function ensureKBFiles() {
+      const email = state.userInfo.email;
+
+      const outputFile = `kb-output-${email}.json`;
+      const existingOutput = await driveDownloadJSON(state.driveFolderId, outputFile);
+      if (!existingOutput) {
+        console.log('Pre-creating KB output file:', outputFile);
+        await driveUploadJSON(state.driveFolderId, outputFile, {
+          tracks: [], synthesis: null, digest: null, updatedAt: null,
+        });
+      }
+
+      const settingsFile = 'kb-settings.json';
+      const existingSettings = await driveDownloadJSON(state.driveFolderId, settingsFile);
+      if (!existingSettings) {
+        console.log('Pre-creating KB settings file:', settingsFile);
+        await driveUploadJSON(state.driveFolderId, settingsFile, {
+          archivedTracks: [],
+        });
+      }
+    }
+
     async function addToQueue(zipFileId, zipFileName) {
       if (!state.userInfo) { showMessage('Please sign in first', 'error'); return; }
 
@@ -1338,6 +1425,10 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
       });
 
       await saveQueue();
+
+      // Ensure KB files exist on Drive so the pipeline can update them
+      try { await ensureKBFiles(); } catch (e) { console.warn('Could not pre-create KB files:', e); }
+
       showMessage('Added to processing queue!');
       loadExportsTab();
     }
@@ -1372,7 +1463,7 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
       document.getElementById('tab-' + tabName).classList.add('active');
 
       if (tabName === 'exports') loadExportsTab();
-      if (tabName === 'brief') loadDigest();
+      if (tabName === 'brief') loadKBOutput();
     }
 
     // ============================================
@@ -1404,7 +1495,7 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
     document.getElementById('refreshBtn').addEventListener('click', () => {
       state.digestCachedAt = null;
       state.synthesisCachedAt = null;
-      loadDigest();
+      loadKBOutput();
     });
 
     document.getElementById('settingsBtn').addEventListener('click', () => document.getElementById('settingsPanel').classList.add('open'));
@@ -1432,11 +1523,12 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
     });
 
     document.getElementById('clearCache').addEventListener('click', () => {
-      localStorage.removeItem('digestCache');
+      localStorage.removeItem('kbOutputCache');
       state.digest = null;
       state.digestCachedAt = null;
       state.synthesis = null;
       state.synthesisCachedAt = null;
+      state.kbTracks = [];
       showMessage('Cache cleared!');
       document.getElementById('settingsPanel').classList.remove('open');
     });

@@ -73,7 +73,7 @@ Tab 3: Exports — queue management for ZIP processing
 - Reads process-queue.json from Drive
 - Downloads/extracts ZIPs, filters new conversations via state-manager
 - Runs extraction -> build -> digest pipeline
-- Creates knowledge-base/ folder structure on Drive
+- Bundles all output (tracks, synthesis, digest) into single kb-output-{email}.json
 
 **src/drive-api.js** — Google Drive API wrapper (service account auth, file CRUD)
 
@@ -81,9 +81,9 @@ Tab 3: Exports — queue management for ZIP processing
 
 **index.html** — Single-file PWA with three tabs
 - OAuth redirect flow for Google auth
-- Reads digest from Drive knowledge-base/ folder
-- Chat sends questions to Claude Sonnet with knowledge base as context
-- Priority overrides from chat saved to knowledge-base/priorities.json on Drive
+- Pre-creates kb-output file via OAuth (service account can't create, only update)
+- Chat loads full track documents + synthesis + digest for rich context
+- Priority overrides from chat saved to kb-priorities.json on Drive
 
 ### Data on Google Drive
 
@@ -91,11 +91,8 @@ Tab 3: Exports — queue management for ZIP processing
 {folder}/
   process-queue.json              — export processing queue
   processed_conversations-{email}.json — delta state per user
-  knowledge-base/
-    digest-{email}.json           — structured digest for PWA
-    priorities.json               — user-stated priority overrides
-    tracks/{slug}.md              — per-track knowledge document
-    meta/synthesis.md             — cross-track synthesis
+  kb-output-{email}.json          — bundled KB: track docs, synthesis, digest
+  kb-priorities.json              — user-stated priority overrides (from Chat tab)
 ```
 
 ## Key Design Decisions

@@ -115,6 +115,18 @@ class ConversationProcessor {
     return [];
   }
 
+  async loadArchivedTracks(folderId) {
+    try {
+      const data = await this.driveAPI.downloadJSON(folderId, 'kb-settings.json');
+      if (data && Array.isArray(data.archivedTracks)) {
+        return new Set(data.archivedTracks);
+      }
+    } catch {
+      // No settings file yet
+    }
+    return new Set();
+  }
+
   async cleanupQueue(queue) {
     const now = Date.now();
     const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
@@ -288,7 +300,6 @@ class ConversationProcessor {
 
           console.log(`Building knowledge base from ${allResults.length} total conversations (${newExtractions} new)`);
 
-
           // 5. Build knowledge base from all stored extractions
           const folderId = this.config.folderId;
           const memories = this.extractMemoryStrings(exportData.memories);
@@ -296,34 +307,32 @@ class ConversationProcessor {
 
           const { trackDocuments, synthesis } = await this.builder.build(allResults);
 
-          // 6. Upload track docs to Drive (flat, kb- prefixed)
-          for (const { slug, document } of trackDocuments) {
-            await this.driveAPI.uploadFile(
-              folderId, `kb-track-${slug}.md`, document, 'text/markdown'
-            );
-          }
-          console.log(`Uploaded ${trackDocuments.length} track doc(s)`);
-
-          // 7. Upload synthesis
-          if (synthesis) {
-            await this.driveAPI.uploadFile(
-              folderId, 'kb-synthesis.md', synthesis, 'text/markdown'
-            );
+          // Filter out archived tracks
+          const archivedSet = await this.loadArchivedTracks(folderId);
+          const activeTrackDocs = trackDocuments.filter(t => !archivedSet.has(t.slug));
+          if (archivedSet.size > 0) {
+            console.log(`Excluded ${trackDocuments.length - activeTrackDocs.length} archived track(s)`);
           }
 
-          // 8. Load priorities and generate digest
+          // 6. Load priorities and generate digest (only active tracks)
           const priorities = await this.loadPriorities(folderId);
           const digest = await this.digestGenerator.generate(
-            trackDocuments, synthesis, priorities, memories
+            activeTrackDocs, synthesis, priorities, memories
           );
 
-          if (digest) {
-            await this.driveAPI.uploadJSON(
-              folderId, `kb-digest-${item.email}.json`, digest
-            );
-          }
+          // 7. Bundle all output into single file (PWA pre-creates via OAuth)
+          const kbOutput = {
+            tracks: activeTrackDocs.map(({ name, slug, document }) => ({ name, slug, document })),
+            synthesis: synthesis || null,
+            digest: digest || null,
+            updatedAt: new Date().toISOString(),
+          };
 
-          // 10. Mark queue item complete
+          const outputFileName = `kb-output-${item.email}.json`;
+          await this.driveAPI.uploadJSON(folderId, outputFileName, kbOutput);
+          console.log(`Uploaded bundled KB output: ${outputFileName} (${trackDocuments.length} tracks)`);
+
+          // 8. Mark queue item complete
           item.status = 'completed';
           item.processedAt = new Date().toISOString();
           item.conversationsExtracted = extractionResults.filter(r => r.success).length;
