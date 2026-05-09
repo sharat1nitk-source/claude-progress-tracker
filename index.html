@@ -929,8 +929,11 @@
 
       try {
         const email = state.userInfo.email;
-        const digest = await driveDownloadJSON(state.driveFolderId, `kb-digest-${email}.json`);
+        const fileName = `kb-digest-${email}.json`;
+        console.log('Looking for digest:', fileName, 'in folder:', state.driveFolderId);
+        const digest = await driveDownloadJSON(state.driveFolderId, fileName);
         if (!digest) {
+          console.log('Digest file not found');
           document.getElementById('briefEmpty').style.display = 'block';
           return;
         }
@@ -1319,6 +1322,9 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
 
     async function addToQueue(zipFileId, zipFileName) {
       if (!state.userInfo) { showMessage('Please sign in first', 'error'); return; }
+
+      // Remove any existing entries for this ZIP (dedup)
+      state.queue.queue = state.queue.queue.filter(q => q.zipFileId !== zipFileId);
 
       state.queue.queue.push({
         id: Date.now().toString(),

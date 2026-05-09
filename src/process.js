@@ -176,14 +176,29 @@ class ConversationProcessor {
         await this.driveAPI.uploadJSON(this.config.folderId, 'process-queue.json', queue);
       }
 
-      const pendingItems = queue.queue.filter(item => item.status === 'pending');
+      // Dedup pending items: keep only latest entry per zipFileId
+      const allPending = queue.queue.filter(item => item.status === 'pending');
+      const seen = new Map();
+      for (const item of allPending) {
+        seen.set(item.zipFileId, item);
+      }
+      const pendingItems = [...seen.values()];
+
+      // Mark duplicates as superseded
+      for (const item of allPending) {
+        if (seen.get(item.zipFileId) !== item) {
+          item.status = 'completed';
+          item.processedAt = new Date().toISOString();
+          item.note = 'superseded by newer queue entry';
+        }
+      }
 
       if (pendingItems.length === 0) {
         console.log('\nAll queue items already processed');
         return;
       }
 
-      console.log(`\nFound ${pendingItems.length} pending item(s) in queue`);
+      console.log(`\nFound ${pendingItems.length} pending item(s) in queue (deduped from ${allPending.length})`);
 
       let totalExtracted = 0;
       let totalErrors = 0;

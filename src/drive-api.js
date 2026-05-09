@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import fs from 'fs/promises';
 import path from 'path';
+import { Readable } from 'stream';
 
 /**
  * Google Drive API wrapper for file operations
@@ -103,7 +104,7 @@ class DriveAPI {
 
       const media = {
         mimeType,
-        body: typeof content === 'string' ? content : Buffer.from(content),
+        body: Readable.from(typeof content === 'string' ? Buffer.from(content) : content),
       };
 
       if (existingFiles.length > 0) {
