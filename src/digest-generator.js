@@ -75,7 +75,15 @@ class DigestGenerator {
 
 ${contextBlock}
 
-Generate a JSON digest. Be specific and actionable. The focus_recommendation should be opinionated: tell the user exactly what to work on first and why.
+First, analyze each track's real priority by weighing these signals:
+- **Recency**: Recently active tracks (>0 tasks pending) matter more than dormant ones
+- **Task density**: Tracks with many concrete pending tasks should rank higher
+- **Blocker impact**: Blocked tracks need attention to unstick, but chronic blockers without progress signal neglect
+- **Completion trajectory**: Tracks where most tasks are done and nothing new is pending may be winding down
+- **User priorities**: Respect user-set high/low priorities explicitly
+- **Cross-track impact**: Tracks that unblock or feed into others are higher leverage
+
+Then generate a JSON digest. The focus_recommendation should be opinionated: tell the user exactly what to work on first and why. The cross_track_priorities should rank by actual importance to the user's goals — not just status labels. Use the analysis above to determine rank.
 
 If user-stated priority overrides exist, they MUST influence the focus_recommendation and cross_track_priorities ranking.
 
