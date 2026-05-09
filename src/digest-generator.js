@@ -69,12 +69,15 @@ Respond ONLY with valid JSON (no markdown, no explanation):
 
     const response = await this.client.messages.create({
       model: this.model,
-      max_tokens: 4096,
+      max_tokens: 8192,
       temperature: 0.3,
       messages: [{ role: 'user', content: prompt }],
     });
 
     const resultText = response.content[0].text;
+    if (response.stop_reason === 'max_tokens') {
+      console.warn('  Warning: digest response truncated (max_tokens hit)');
+    }
     const digest = this.parseDigest(resultText);
 
     this.enrichWithDaysSinceActive(digest, trackDocuments);
