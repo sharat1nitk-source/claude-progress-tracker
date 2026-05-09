@@ -774,6 +774,7 @@
       trackPriorities: {},
       trackNotes: {},
       trackOrder: [],
+      snoozedTracks: {},
       queue: { queue: [] },
       chatHistory: [],
     };
@@ -1031,6 +1032,7 @@
           state.trackPriorities = data.trackPriorities || {};
           state.trackNotes = data.trackNotes || {};
           state.trackOrder = data.trackOrder || [];
+          state.snoozedTracks = data.snoozedTracks || {};
         }
       } catch { /* no settings yet */ }
     }
@@ -1041,6 +1043,7 @@
         trackPriorities: state.trackPriorities,
         trackNotes: state.trackNotes,
         trackOrder: state.trackOrder,
+        snoozedTracks: state.snoozedTracks,
       });
     }
 
@@ -1216,9 +1219,25 @@
     window.unarchiveTrack = unarchiveTrack;
     window.setTrackPriority = setTrackPriority;
     window.editTrackNote = editTrackNote;
+    async function snoozeTrack(slug) {
+      state.snoozedTracks[slug] = Date.now() + 3 * 24 * 60 * 60 * 1000;
+      await saveKBSettings();
+      renderBrief();
+      showMessage('Track snoozed for 3 days');
+    }
+
+    async function unsnoozeTrack(slug) {
+      delete state.snoozedTracks[slug];
+      await saveKBSettings();
+      renderBrief();
+      showMessage('Track unsnoozed');
+    }
+
     window.moveTrackUp = moveTrackUp;
     window.moveTrackDown = moveTrackDown;
     window.toggleTrackDetails = toggleTrackDetails;
+    window.snoozeTrack = snoozeTrack;
+    window.unsnoozeTrack = unsnoozeTrack;
 
     // ============================================
     // FOCUS BRIEF
@@ -1291,8 +1310,15 @@
       const priorityOrder = { high: 0, normal: 1, low: 2 };
       const statusOrder = { blocked: 0, stalling: 1, active: 2, completed: 3 };
       const archived = new Set(state.archivedTracks);
-      const activeTracks = (d.tracks || []).filter(t => !archived.has(t.slug));
+      const now = Date.now();
+      // Auto-unsnooze expired tracks
+      for (const [slug, expiry] of Object.entries(state.snoozedTracks)) {
+        if (expiry <= now) delete state.snoozedTracks[slug];
+      }
+      const snoozedSlugs = new Set(Object.keys(state.snoozedTracks));
+      const activeTracks = (d.tracks || []).filter(t => !archived.has(t.slug) && !snoozedSlugs.has(t.slug));
       const archivedTracksList = (d.tracks || []).filter(t => archived.has(t.slug));
+      const snoozedTracksList = (d.tracks || []).filter(t => snoozedSlugs.has(t.slug) && !archived.has(t.slug));
 
       // Build trackOrder from current sort on first load if empty
       if (state.trackOrder.length === 0) {
@@ -1338,6 +1364,7 @@
                 <button class="priority-btn ${priority === 'high' ? 'active-high' : ''}" onclick="setTrackPriority('${safeSlug}','${priority === 'high' ? 'normal' : 'high'}')" title="${priority === 'high' ? 'Remove high priority' : 'Set high priority'}">▲</button>
                 <button class="priority-btn ${priority === 'low' ? 'active-low' : ''}" onclick="setTrackPriority('${safeSlug}','${priority === 'low' ? 'normal' : 'low'}')" title="${priority === 'low' ? 'Remove low priority' : 'Set low priority'}">▼</button>
                 <span class="status-badge ${statusClass}">${(t.status || 'active').toUpperCase()}</span>
+                <button class="secondary small" onclick="snoozeTrack('${safeSlug}')" title="Hide for 3 days">Snooze 3d</button>
                 <button class="secondary small" onclick="archiveTrack('${safeSlug}')" title="Archive this track">Archive</button>
               </div>
             </div>
@@ -1383,6 +1410,23 @@
               <div class="track-header">
                 <span class="track-name">${esc(t.name)}</span>
                 <button class="secondary small" onclick="unarchiveTrack('${safeSlug}')">Restore</button>
+              </div>
+            </div>`;
+        }
+      }
+
+      // Snoozed tracks
+      if (snoozedTracksList.length > 0) {
+        html += `<div class="section-title">Snoozed (${snoozedTracksList.length})</div>`;
+        for (const t of snoozedTracksList) {
+          const safeSlug = esc(t.slug);
+          const remaining = Math.ceil((state.snoozedTracks[t.slug] - now) / 86400000);
+          html += `
+            <div class="track-card" style="opacity: 0.5;">
+              <div class="track-header">
+                <span class="track-name">${esc(t.name)}</span>
+                <span style="font-size:0.75rem;color:var(--text-muted);">${remaining}d remaining</span>
+                <button class="secondary small" onclick="unsnoozeTrack('${safeSlug}')">Unsnooze</button>
               </div>
             </div>`;
         }
