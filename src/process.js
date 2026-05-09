@@ -315,9 +315,16 @@ class ConversationProcessor {
           }
 
           // 6. Load priorities and generate digest (only active tracks)
+          // Trim track documents for digest (exclude long conversation history tables)
+          const trimmedTrackDocs = activeTrackDocs.map(t => ({
+            name: t.name,
+            slug: t.slug,
+            document: t.document.split('## Conversation History')[0] || t.document,
+          }));
+
           const priorities = await this.loadPriorities(folderId);
           const digest = await this.digestGenerator.generate(
-            activeTrackDocs, synthesis, priorities, memories
+            trimmedTrackDocs, synthesis, priorities, memories
           );
 
           // 7. Bundle all output into single file (PWA pre-creates via OAuth)
