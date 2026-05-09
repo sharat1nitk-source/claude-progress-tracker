@@ -47,7 +47,7 @@ class DriveAPI {
 
       const response = await this.drive.files.list({
         q,
-        fields: 'files(id, name, mimeType, modifiedTime, size)',
+        fields: 'files(id, name, mimeType, createdTime, modifiedTime, size)',
         orderBy: 'modifiedTime desc',
         supportsAllDrives: true,
         includeItemsFromAllDrives: true,

@@ -51,6 +51,7 @@ class ConversationProcessor {
       folderId: process.env.GOOGLE_DRIVE_FOLDER_ID,
       apiKey: process.env.ANTHROPIC_API_KEY,
       forceReprocess: process.env.FORCE_REPROCESS === 'true',
+      autoQueueEmail: process.env.AUTO_QUEUE_EMAIL || null,
     };
   }
 
@@ -83,8 +84,8 @@ class ConversationProcessor {
     for (const entry of zipEntries) {
       if (entry.entryName === 'conversations.json') {
         exportData.conversations = JSON.parse(entry.getData().toString('utf8'));
-      } else if (entry.entryName === 'projects.json') {
-        exportData.projects = JSON.parse(entry.getData().toString('utf8'));
+      } else if (entry.entryName.endsWith('.json') && entry.entryName.startsWith('projects/')) {
+        exportData.projects.push(JSON.parse(entry.getData().toString('utf8')));
       } else if (entry.entryName === 'memories.json') {
         exportData.memories = JSON.parse(entry.getData().toString('utf8'));
       } else if (entry.entryName === 'users.json') {
@@ -156,6 +157,47 @@ class ConversationProcessor {
     });
   }
 
+  async autoQueueLatestZip(queue) {
+    const email = this.config.autoQueueEmail;
+    console.log(`\nAuto-queue mode for ${email} — discovering latest export ZIP...`);
+
+    const zipFiles = await this.driveAPI.listFiles(
+      this.config.folderId,
+      "mimeType='application/zip' or mimeType='application/x-zip-compressed'"
+    );
+
+    const exportZips = zipFiles
+      .filter(f => f.name.startsWith('data-') && f.name.endsWith('.zip'))
+      .sort((a, b) => new Date(b.createdTime) - new Date(a.createdTime));
+
+    if (exportZips.length === 0) {
+      console.log('  No export ZIPs found on Drive');
+      return;
+    }
+
+    const latest = exportZips[0];
+    const existing = queue.queue.find(q => q.zipFileId === latest.id);
+
+    if (existing) {
+      if (this.config.forceReprocess) {
+        existing.status = 'pending';
+        existing.email = email;
+        console.log(`  Re-queued (force): ${latest.name}`);
+      } else {
+        console.log(`  Already in queue: ${latest.name}`);
+      }
+    } else {
+      queue.queue.push({
+        zipFileId: latest.id,
+        zipFileName: latest.name,
+        email,
+        status: 'pending',
+        addedAt: new Date().toISOString(),
+      });
+      console.log(`  Queued: ${latest.name}`);
+    }
+  }
+
   async cleanup() {
     try {
       await fs.rm(this.tempDir, { recursive: true, force: true });
@@ -178,6 +220,11 @@ class ConversationProcessor {
       if (!queue || !queue.queue || queue.queue.length === 0) {
         console.log('\nNo items in processing queue');
         return;
+      }
+
+      // Auto-queue: discover latest export ZIP and add to queue
+      if (this.config.autoQueueEmail) {
+        await this.autoQueueLatestZip(queue);
       }
 
       const beforeCleanup = queue.queue.length;
@@ -307,7 +354,7 @@ class ConversationProcessor {
           const memories = this.extractMemoryStrings(exportData.memories);
           console.log(`Memories from export: ${memories.length}`);
 
-          const { trackDocuments, synthesis } = await this.builder.build(allResults);
+          const { trackDocuments, synthesis } = await this.builder.build(allResults, exportData.projects);
 
           // Filter out archived tracks, load user-set track priorities
           const { archivedTracks: archivedSet, trackPriorities, trackNotes } = await this.loadTrackSettings(folderId);

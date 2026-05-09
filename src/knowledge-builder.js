@@ -78,11 +78,33 @@ class KnowledgeBuilder {
       }
     }
 
+    // Compute aggregate track health (not just latest.status)
     const statusCounts = {};
+    let convsWithBlockers = 0;
     for (const { knowledge } of conversations) {
       statusCounts[knowledge.status] = (statusCounts[knowledge.status] || 0) + 1;
+      if (knowledge.blockers && knowledge.blockers.length > 0) convsWithBlockers++;
     }
-    const overallStatus = latest.status;
+    const totalActionable = allPending.length + allCompleted.length;
+    const completionRatio = totalActionable > 0 ? allCompleted.length / totalActionable : 0;
+
+    let overallStatus;
+    const latestIsCompleted = latest.status === 'completed';
+    const majorityCompleted = statusCounts['completed'] >= conversations.length * 0.7 && conversations.length > 1;
+    const allDone = totalActionable > 0 && completionRatio >= 0.9;
+    const noPendingLeft = allPending.length === 0 && totalActionable > 0;
+    const hasRecentBlockers = convsWithBlockers > 0 && convsWithBlockers >= conversations.length * 0.3;
+    const latestIsBlocked = latest.status === 'blocked' && !latestIsCompleted;
+
+    if (hasRecentBlockers || (latestIsBlocked && !majorityCompleted)) {
+      overallStatus = 'blocked';
+    } else if (allDone || noPendingLeft || majorityCompleted) {
+      overallStatus = 'completed';
+    } else if (allPending.length > 0 || conversations.length > 0) {
+      overallStatus = 'active';
+    } else {
+      overallStatus = 'parked';
+    }
 
     const lastActive = conversations[conversations.length - 1].conversation.updated_at?.split('T')[0] || 'unknown';
 
@@ -107,6 +129,18 @@ class KnowledgeBuilder {
       for (const t of allCompleted) md += `- ${t}\n`;
       md += '\n';
     }
+
+    // Reconciliation: remove pending tasks that match completed ones (same wording)
+    const completedTexts = new Set(
+      allCompleted.map(t => t.replace(/\s*\(\d{4}-\d{2}-\d{2}\)\s*$/, '').trim().toLowerCase())
+    );
+    allPending = allPending.filter(t => {
+      const isDuplicate = completedTexts.has(t.trim().toLowerCase());
+      if (isDuplicate) {
+        console.log(`    Reconciled pending->completed: "${t.substring(0, 60)}..."`);
+      }
+      return !isDuplicate;
+    });
 
     if (allPending.length > 0) {
       md += `## Pending Tasks\n`;
@@ -195,7 +229,68 @@ Last updated: ${new Date().toISOString().split('T')[0]}
     return response.content[0].text;
   }
 
-  async build(extractionResults) {
+  buildProjectLookup(projects) {
+    const lookup = new Map();
+    for (const p of projects) {
+      if (p.is_starter_project) continue;
+      const slug = this.slugify(p.name);
+      lookup.set(slug, p);
+      // Also index by the raw name parts for fuzzy matching
+      for (const part of p.name.toLowerCase().split(/[\s,/]+/)) {
+        if (part.length > 3) {
+          if (!lookup.has(`_part:${part}`)) {
+            lookup.set(`_part:${part}`, p);
+          }
+        }
+      }
+    }
+    return lookup;
+  }
+
+  findProject(projectLookup, trackName) {
+    const slug = this.slugify(trackName);
+    // Exact slug match first
+    if (projectLookup.has(slug)) return projectLookup.get(slug);
+    // Fuzzy match: check if any track word matches a project word
+    const trackParts = trackName.toLowerCase().split(/[\s,/]+/);
+    for (const part of trackParts) {
+      if (part.length > 3 && projectLookup.has(`_part:${part}`)) {
+        return projectLookup.get(`_part:${part}`);
+      }
+    }
+    // Reverse fuzzy: check if project name words (≥4 chars) appear in track name
+    for (const [key, project] of projectLookup) {
+      if (key.startsWith('_part:')) continue;
+      const projParts = project.name.toLowerCase().split(/[\s,/]+/).filter(p => p.length >= 4);
+      const trackLower = trackName.toLowerCase();
+      const matchedParts = projParts.filter(pp => trackLower.includes(pp));
+      if (matchedParts.length >= 2 || (matchedParts.length === 1 && matchedParts[0].length >= 6)) {
+        return project;
+      }
+    }
+    return null;
+  }
+
+  includeProjectDocs(document, project) {
+    if (!project || !project.docs || project.docs.length === 0) return document;
+
+    let docSection = '\n## Project Documents\n';
+    for (const doc of project.docs) {
+      // Truncate very large docs to avoid token overflow in digest
+      const content = doc.content.length > 4000
+        ? doc.content.substring(0, 4000) + '\n... (truncated)'
+        : doc.content;
+      docSection += `\n### ${doc.filename}\n${content}\n`;
+    }
+
+    const historyIdx = document.indexOf('## Conversation History');
+    if (historyIdx !== -1) {
+      return document.substring(0, historyIdx) + docSection + '\n\n' + document.substring(historyIdx);
+    }
+    return document + docSection;
+  }
+
+  async build(extractionResults, projects = []) {
     const tracks = this.groupByTrack(extractionResults);
 
     if (tracks.size === 0) {
@@ -203,14 +298,25 @@ Last updated: ${new Date().toISOString().split('T')[0]}
       return { trackDocuments: [], synthesis: null };
     }
 
+    const projectLookup = this.buildProjectLookup(projects);
+
     console.log(`\nBuilding knowledge base for ${tracks.size} track(s)...`);
+    if (projectLookup.size > 0) {
+      console.log(`  ${projectLookup.size} project(s) available for doc injection`);
+    }
 
     const trackDocuments = [];
     for (const track of tracks.values()) {
-      const document = this.buildTrackDocument(track);
+      let document = this.buildTrackDocument(track);
       const slug = this.slugify(track.name);
+      const project = this.findProject(projectLookup, track.name);
+      if (project) {
+        document = this.includeProjectDocs(document, project);
+        console.log(`  Built track: ${track.name} (${track.conversations.length} conversations, ${project.docs.length} doc(s) injected)`);
+      } else {
+        console.log(`  Built track: ${track.name} (${track.conversations.length} conversations)`);
+      }
       trackDocuments.push({ name: track.name, slug, document });
-      console.log(`  Built track: ${track.name} (${track.conversations.length} conversations)`);
     }
 
     console.log('Generating cross-track synthesis...');

@@ -13,6 +13,10 @@ on:
         required: false
         type: boolean
         default: false
+      email:
+        description: 'Email for auto-queue (auto-discovers latest export ZIP)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -40,6 +44,7 @@ jobs:
           GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FORCE_REPROCESS: ${{ github.event.inputs.force_reprocess }}
+          AUTO_QUEUE_EMAIL: ${{ github.event.inputs.email }}
         run: node src/process.js
 
       - name: Output summary
