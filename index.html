@@ -153,6 +153,30 @@
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
+    /* Search */
+    .search-input {
+      width: 100%; padding: 0.75rem 1rem; font-size: 1rem;
+      border: 2px solid var(--border); border-radius: var(--radius);
+      outline: none; background: var(--bg); color: var(--text);
+      font-family: inherit; margin-bottom: 1rem; transition: border-color 0.2s;
+    }
+    .search-input:focus { border-color: var(--primary); }
+    .search-result-group { margin-bottom: 1.25rem; }
+    .search-result-group h3 {
+      font-size: 0.8rem; font-weight: 700; color: var(--text-secondary);
+      text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;
+    }
+    .search-result-item {
+      padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border);
+      font-size: 0.85rem; cursor: pointer; border-radius: 0.25rem;
+    }
+    .search-result-item:hover { background: var(--bg-tertiary); }
+    .search-result-item .sr-track { font-size: 0.7rem; color: var(--primary); font-weight: 600; }
+    .search-result-item .sr-context { color: var(--text-secondary); margin-top: 0.15rem; }
+    .search-result-item .sr-context em { color: var(--text); font-style: normal; background: #fef3c7; }
+    .search-result-item .sr-date { font-size: 0.7rem; color: var(--text-muted); }
+    .search-highlight { background: #fef3c7; padding: 0 0.1rem; }
+
     /* Focus Brief */
     .hero {
       background: linear-gradient(135deg, var(--primary), var(--primary-dark));
@@ -615,6 +639,7 @@
     <div id="tabs-container" style="display: none;">
       <div class="tabs">
         <button class="tab active" data-tab="brief">Focus Brief</button>
+        <button class="tab" data-tab="search">Search</button>
         <button class="tab" data-tab="chat">Chat</button>
         <button class="tab" data-tab="exports">Exports</button>
       </div>
@@ -625,6 +650,18 @@
         <div id="briefEmpty" class="empty-state" style="display: none;">
           <h2>No data yet</h2>
           <p>Upload a Claude export ZIP in the Exports tab, then trigger processing in GitHub Actions.</p>
+        </div>
+      </div>
+
+      <!-- Tab 2: Search -->
+      <div id="tab-search" class="tab-content">
+        <div class="search-container">
+          <input type="text" id="searchInput" class="search-input" placeholder="Search conversations, decisions, tasks..." autocomplete="off">
+          <div id="searchResults" class="search-results"></div>
+          <div id="searchEmpty" class="empty-state">
+            <h2>Search across all tracks</h2>
+            <p>Find conversations, decisions, tasks, and blockers across your entire knowledge base.</p>
+          </div>
         </div>
       </div>
 
@@ -1168,6 +1205,7 @@
         state.kbTracks = kbOutput.tracks || [];
         state.digestCachedAt = Date.now();
         state.synthesisCachedAt = Date.now();
+        searchIndex = null;
 
         localStorage.setItem('kbOutputCache', JSON.stringify(kbOutput));
 
@@ -1859,6 +1897,137 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
 
       if (tabName === 'exports') loadExportsTab();
       if (tabName === 'brief') loadKBOutput();
+      if (tabName === 'search') { document.getElementById('searchInput')?.focus(); doSearch(); }
+    }
+
+    // ============================================
+    // SEARCH
+    // ============================================
+
+    let searchIndex = null;
+
+    function buildSearchIndex() {
+      if (searchIndex) return;
+      searchIndex = [];
+      for (const track of state.kbTracks) {
+        const doc = track.document;
+        // Parse conversation history table
+        const convMatch = doc.match(/## Conversation History \(chronological\)\n\|.*\n\|.*\n([\s\S]*?)$/);
+        if (convMatch) {
+          const rows = convMatch[1].trim().split('\n').filter(l => l.startsWith('|'));
+          for (const row of rows) {
+            const cols = row.split('|').map(c => c.trim());
+            if (cols.length >= 5) {
+              searchIndex.push({
+                trackName: track.name,
+                trackSlug: track.slug,
+                type: 'conversation',
+                date: cols[1],
+                title: cols[2],
+                summary: cols[4],
+                fullText: `${cols[2]} ${cols[4]}`,
+              });
+            }
+          }
+        }
+        // Parse key sections for text search
+        const sections = ['Current State', 'Decisions Made', 'Plans & Goals', 'Pending Tasks', 'Blockers', 'Key Insights'];
+        for (const section of sections) {
+          const m = doc.match(new RegExp(`## ${section}\\n([\\s\\S]*?)(?=\\n## |$)`));
+          if (m) {
+            const lines = m[1].split('\n').filter(l => l.startsWith('- ')).map(l => l.slice(2).trim());
+            for (const line of lines) {
+              searchIndex.push({
+                trackName: track.name,
+                trackSlug: track.slug,
+                type: section.toLowerCase().replace(/ & /g, '_').replace(/ /g, '_'),
+                label: section,
+                text: line,
+                fullText: line,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    function doSearch() {
+      const q = document.getElementById('searchInput')?.value?.trim().toLowerCase();
+      const resultsEl = document.getElementById('searchResults');
+      const emptyEl = document.getElementById('searchEmpty');
+      if (!resultsEl || !emptyEl) return;
+
+      if (!q || q.length < 2) {
+        resultsEl.innerHTML = '';
+        resultsEl.style.display = 'none';
+        emptyEl.style.display = 'block';
+        return;
+      }
+
+      buildSearchIndex();
+      const terms = q.split(/\s+/).filter(t => t.length > 1);
+
+      const matches = searchIndex.filter(item => {
+        const text = item.fullText.toLowerCase();
+        return terms.every(t => text.includes(t));
+      }).slice(0, 100);
+
+      // Group by track then by type
+      const grouped = {};
+      for (const m of matches) {
+        const key = m.trackSlug;
+        if (!grouped[key]) grouped[key] = { trackName: m.trackName, items: [] };
+        grouped[key].items.push(m);
+      }
+
+      if (Object.keys(grouped).length === 0) {
+        resultsEl.innerHTML = `<div class="empty-state"><h2>No results for "${esc(q)}"</h2><p>Try different keywords or check that data is loaded.</p></div>`;
+        resultsEl.style.display = 'block';
+        emptyEl.style.display = 'none';
+        return;
+      }
+
+      const highlight = (text) => {
+        let t = esc(text);
+        for (const term of terms) {
+          const re = new RegExp(esc(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+          t = t.replace(re, m => `<span class="search-highlight">${m}</span>`);
+        }
+        return t;
+      };
+
+      let html = '';
+      for (const [slug, group] of Object.entries(grouped)) {
+        html += `<div class="search-result-group"><h3>${esc(group.trackName)}</h3>`;
+
+        // Group by type within track
+        const typeGroups = {};
+        for (const item of group.items) {
+          const type = item.type === 'conversation' ? 'conversation' : item.label || item.type;
+          if (!typeGroups[type]) typeGroups[type] = [];
+          typeGroups[type].push(item);
+        }
+
+        for (const [type, items] of Object.entries(typeGroups)) {
+          for (const item of items.slice(0, 15)) {
+            if (item.type === 'conversation') {
+              html += `<div class="search-result-item" onclick="switchTab('brief')">
+                <div><span class="sr-track">${esc(item.date)}</span> ${highlight(item.title)}</div>
+                <div class="sr-context">${highlight(item.summary.substring(0, 120))}</div>
+              </div>`;
+            } else {
+              html += `<div class="search-result-item" onclick="switchTab('brief')">
+                <div><span class="sr-track">${esc(type)}</span> ${highlight(item.text.substring(0, 150))}</div>
+              </div>`;
+            }
+          }
+        }
+        html += '</div>';
+      }
+
+      resultsEl.innerHTML = html;
+      resultsEl.style.display = 'block';
+      emptyEl.style.display = 'none';
     }
 
     // ============================================
@@ -1885,6 +2054,8 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
     // ============================================
 
     document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+    document.getElementById('searchInput')?.addEventListener('input', doSearch);
     document.getElementById('signInBtn').addEventListener('click', handleSignIn);
     document.getElementById('signOutBtn').addEventListener('click', handleSignOut);
     document.getElementById('refreshBtn').addEventListener('click', () => {
