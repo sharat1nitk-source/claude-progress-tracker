@@ -267,8 +267,9 @@ class ConversationProcessor {
 
           // 4. Knowledge extraction (per conversation)
           let newExtractions = 0;
+          let extractionResults = [];
           if (toProcess.length > 0) {
-            const extractionResults = await this.extractor.processConversations(toProcess, knownTracks);
+            extractionResults = await this.extractor.processConversations(toProcess, knownTracks);
 
             for (const result of extractionResults) {
               if (result.success) {
