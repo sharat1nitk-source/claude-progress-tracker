@@ -1179,7 +1179,10 @@
         html += '<h4>Recent Decisions</h4><ul>' + decisions.map(d => `<li>${esc(d)}</li>`).join('') + '</ul>';
       }
       if (blockers.length) {
-        html += '<h4>Blockers</h4><ul>' + blockers.map(b => `<li>${esc(b)}</li>`).join('') + '</ul>';
+        const firstDate = allDates.length > 0 ? allDates[0] : null;
+        html += '<h4>Blockers</h4>';
+        if (firstDate) html += `<div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:0.25rem;">Since ${firstDate} · ${blockers.length} blocker${blockers.length > 1 ? 's' : ''} across ${allDates.length} conversations</div>`;
+        html += '<ul>' + blockers.map(b => `<li>${esc(b)}</li>`).join('') + '</ul>';
       }
       if (insights.length) {
         html += '<h4>Key Insights</h4><ul>' + insights.map(i => `<li>${esc(i)}</li>`).join('') + '</ul>';
