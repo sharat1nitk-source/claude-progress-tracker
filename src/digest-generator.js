@@ -6,6 +6,34 @@ class DigestGenerator {
     this.model = 'claude-sonnet-4-6';
   }
 
+  condenseTrackForDigest({ name, document }) {
+    const statusMatch = document.match(/Status: (\w+) \| Last active: (\d{4}-\d{2}-\d{2})/);
+    const status = statusMatch?.[1] || 'unknown';
+    const lastActive = statusMatch?.[2] || 'unknown';
+
+    const extractSection = (sectionName) => {
+      const m = document.match(new RegExp(`## ${sectionName}\\n([\\s\\S]*?)(?=\\n## |$)`));
+      if (!m) return [];
+      return m[1].split('\n').filter(l => l.startsWith('- ')).map(l => l.slice(2).trim());
+    };
+
+    const currentStateMatch = document.match(/## Current State\n([\s\S]*?)(?=\n## |$)/);
+    const currentState = currentStateMatch
+      ? currentStateMatch[1].trim().split(/\. +/).slice(0, 2).join('. ')
+      : '';
+
+    const pending = extractSection('Pending Tasks').slice(0, 5);
+    const blockers = extractSection('Blockers').slice(0, 3);
+    const decisions = extractSection('Decisions Made').slice(-3);
+
+    let condensed = `### ${name} (status: ${status}, last active: ${lastActive})\n`;
+    if (currentState) condensed += `Current: ${currentState}\n`;
+    if (pending.length) condensed += `Pending: ${pending.join(' | ')}\n`;
+    if (blockers.length) condensed += `Blockers: ${blockers.join(' | ')}\n`;
+    if (decisions.length) condensed += `Recent decisions: ${decisions.join(' | ')}\n`;
+    return condensed;
+  }
+
   async generate(trackDocuments, synthesis, priorities = null, memories = null) {
     if (!trackDocuments || trackDocuments.length === 0) {
       console.log('No track documents to generate digest from.');
@@ -14,11 +42,11 @@ class DigestGenerator {
 
     console.log('Generating visual digest...');
 
-    const trackContent = trackDocuments
-      .map(({ name, document }) => `### ${name}\n${document}`)
-      .join('\n\n---\n\n');
+    const condensedTracks = trackDocuments.map(t => this.condenseTrackForDigest(t)).join('\n');
+    const inputChars = condensedTracks.length + (synthesis || '').length;
+    console.log(`  Input: ${trackDocuments.length} tracks, ~${inputChars} chars (~${Math.ceil(inputChars / 4)} tokens est.)`);
 
-    let contextBlock = `## Track Documents\n\n${trackContent}\n\n## Cross-Track Synthesis\n\n${synthesis || 'No synthesis available.'}`;
+    let contextBlock = `## Track Snapshots\n\n${condensedTracks}\n\n## Cross-Track Synthesis\n\n${synthesis || 'No synthesis available.'}`;
 
     if (priorities && priorities.length > 0) {
       const priorityLines = priorities
@@ -36,36 +64,39 @@ class DigestGenerator {
 
 ${contextBlock}
 
-Generate a JSON digest. Be specific and actionable — reference actual decisions, tasks, and blockers from the track documents. The focus_recommendation should be opinionated: tell the user exactly what to work on first and why.
+Generate a JSON digest. Be specific and actionable. The focus_recommendation should be opinionated: tell the user exactly what to work on first and why.
 
 If user-stated priority overrides exist, they MUST influence the focus_recommendation and cross_track_priorities ranking.
+
+Keep all text SHORT — one sentence max per field. Limit arrays strictly to the counts shown.
 
 Respond ONLY with valid JSON (no markdown, no explanation):
 {
   "generated_at": "${new Date().toISOString()}",
-  "focus_recommendation": "2-3 sentences on what to focus on right now and why",
+  "focus_recommendation": "2-3 sentences max",
   "tracks": [
     {
       "name": "Track Name",
       "slug": "track-name",
       "status": "active|stalling|blocked|completed",
-      "status_reason": "one sentence why this status",
-      "current_focus": "one sentence on what is actively being worked",
-      "progress_summary": "short paragraph",
+      "status_reason": "one short sentence",
+      "current_focus": "one short sentence",
       "top_priorities": [
-        { "action": "...", "why": "...", "urgency": "high|medium|low" }
+        { "action": "short phrase", "why": "short phrase", "urgency": "high|medium|low" }
       ],
-      "blockers": [],
-      "recent_wins": [],
+      "blockers": ["one phrase each"],
+      "recent_wins": ["one phrase each"],
       "days_since_active": 0
     }
   ],
   "cross_track_priorities": [
-    { "rank": 1, "action": "...", "track": "...", "why": "...", "urgency": "high|medium|low" }
+    { "rank": 1, "action": "short phrase", "track": "name", "why": "short phrase", "urgency": "high|medium|low" }
   ],
   "connections": [],
   "stalling_tracks": []
-}`;
+}
+
+STRICT LIMITS: top_priorities max 3 items, blockers max 2 items, recent_wins max 2 items, cross_track_priorities max 8 items.`;
 
     const response = await this.client.messages.create({
       model: this.model,
@@ -75,6 +106,8 @@ Respond ONLY with valid JSON (no markdown, no explanation):
     });
 
     const resultText = response.content[0].text;
+    const outputChars = resultText.length;
+    console.log(`  Output: ~${outputChars} chars (~${Math.ceil(outputChars / 4)} tokens est.), stop_reason: ${response.stop_reason}`);
     if (response.stop_reason === 'max_tokens') {
       console.warn('  Warning: digest response truncated (max_tokens hit)');
     }

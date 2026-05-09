@@ -1116,34 +1116,36 @@
     // ============================================
 
     async function loadKnowledgeContext() {
-      let context = '';
-
-      // Load KB output if not cached
       if (!state.synthesis || !state.synthesisCachedAt || Date.now() - state.synthesisCachedAt > CACHE_TTL) {
         await loadKBOutput();
       }
 
-      // Full track documents for rich context
-      if (state.kbTracks && state.kbTracks.length > 0) {
-        context += '## Track Documents\n\n';
-        for (const t of state.kbTracks) {
-          context += `### ${t.name}\n${t.document}\n\n---\n\n`;
+      let context = '';
+
+      // Condensed track list with slugs so Claude knows what to fetch
+      if (state.digest?.tracks?.length > 0) {
+        context += '## Available Tracks (use get_track_details for full details)\n';
+        for (const t of state.digest.tracks) {
+          const daysAgo = t.days_since_active > 0 ? `, ${t.days_since_active}d ago` : '';
+          context += `- **${t.name}** (slug: \`${t.slug}\`, status: ${t.status}${daysAgo})\n`;
+          if (t.current_focus) context += `  Focus: ${t.current_focus}\n`;
+          if (t.blockers?.length) context += `  Blockers: ${t.blockers.slice(0, 2).join('; ')}\n`;
         }
+        context += '\n';
+      } else if (state.kbTracks?.length > 0) {
+        context += '## Available Tracks (use get_track_details for full details)\n';
+        for (const t of state.kbTracks) {
+          context += `- **${t.name}** (slug: \`${t.slug}\`)\n`;
+        }
+        context += '\n';
+      }
+
+      if (state.digest?.focus_recommendation) {
+        context += `## Focus Recommendation\n${state.digest.focus_recommendation}\n\n`;
       }
 
       if (state.synthesis) {
         context += '## Cross-Track Synthesis\n' + state.synthesis + '\n\n';
-      }
-
-      // Include digest summary
-      if (state.digest) {
-        context += '## Current Digest\n';
-        context += 'Focus: ' + (state.digest.focus_recommendation || '') + '\n';
-        for (const t of (state.digest.tracks || [])) {
-          context += `\n### ${t.name} [${t.status}]\n${t.progress_summary || t.current_focus || ''}\n`;
-          if (t.blockers?.length) context += 'Blockers: ' + t.blockers.join(', ') + '\n';
-        }
-        context += '\n';
       }
 
       return context;
@@ -1158,22 +1160,18 @@
 
       document.getElementById('chatEmpty').style.display = 'none';
 
-      // Render user message
       appendChatMessage('user', userMessage);
       state.chatHistory.push({ role: 'user', content: userMessage });
 
-      // Show typing indicator
       const typingEl = appendTypingIndicator();
 
       try {
         const knowledgeContext = await loadKnowledgeContext();
-
-        // Check if this is a priority override
         const isPriorityChange = /prioriti[sz]e|more important|focus on|less important|deprioritize|park/i.test(userMessage);
 
         let systemPrompt = `You are a personal assistant with complete knowledge of the user's projects, plans, decisions, and progress — derived from their Claude.ai conversation history.
 
-Answer questions concisely and specifically. Reference actual decisions, plans, or conversations when relevant. If you don't know something, say so.
+Answer questions concisely and specifically. When the user asks about a specific track or needs detailed information (decisions, tasks, blockers), use the get_track_details tool. For high-level questions use the context below directly.
 
 ${knowledgeContext}`;
 
@@ -1182,38 +1180,74 @@ ${knowledgeContext}`;
 PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": "${new Date().toISOString()}"}`;
         }
 
-        const messages = state.chatHistory.map(m => ({ role: m.role, content: m.content }));
+        const tools = [{
+          name: 'get_track_details',
+          description: 'Get the full document for a specific project track, including all decisions, tasks, blockers, plans, key insights, and conversation history.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              slug: { type: 'string', description: 'The track slug, e.g. "career-transition". Listed in Available Tracks above.' }
+            },
+            required: ['slug']
+          }
+        }];
 
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': state.anthropicApiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true',
-          },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-6',
-            max_tokens: 2048,
-            system: systemPrompt,
-            messages,
-          }),
-        });
+        // Messages for API — current turn is the last item (already pushed above)
+        let apiMessages = state.chatHistory.map(m => ({ role: m.role, content: m.content }));
+        let finalText = '';
+
+        while (true) {
+          const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': state.anthropicApiKey,
+              'anthropic-version': '2023-06-01',
+              'anthropic-dangerous-direct-browser-access': 'true',
+            },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-6',
+              max_tokens: 2048,
+              system: systemPrompt,
+              tools,
+              messages: apiMessages,
+            }),
+          });
+
+          if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`API error ${response.status}: ${errText}`);
+          }
+
+          const data = await response.json();
+
+          if (data.stop_reason === 'tool_use') {
+            const toolUseBlock = data.content.find(b => b.type === 'tool_use');
+            const slug = toolUseBlock.input.slug;
+            const track = state.kbTracks?.find(
+              t => t.slug === slug || t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') === slug
+            );
+            const trackContent = track
+              ? `# ${track.name}\n\n${track.document}`
+              : `No track found with slug "${slug}". Available: ${(state.kbTracks || []).map(t => t.slug).join(', ')}`;
+
+            apiMessages.push({ role: 'assistant', content: data.content });
+            apiMessages.push({
+              role: 'user',
+              content: [{ type: 'tool_result', tool_use_id: toolUseBlock.id, content: trackContent }]
+            });
+          } else {
+            const textBlock = data.content.find(b => b.type === 'text');
+            finalText = textBlock?.text || '';
+            break;
+          }
+        }
 
         typingEl.remove();
 
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(`API error ${response.status}: ${errText}`);
-        }
-
-        const data = await response.json();
-        let assistantText = data.content[0].text;
-
-        // Check for priority override
-        const overrideMatch = assistantText.match(/PRIORITY_OVERRIDE:\s*(\{[^}]+\})/);
+        const overrideMatch = finalText.match(/PRIORITY_OVERRIDE:\s*(\{[^}]+\})/);
         if (overrideMatch) {
-          assistantText = assistantText.replace(/PRIORITY_OVERRIDE:\s*\{[^}]+\}/, '').trim();
+          finalText = finalText.replace(/PRIORITY_OVERRIDE:\s*\{[^}]+\}/, '').trim();
           try {
             const override = JSON.parse(overrideMatch[1]);
             await savePriorityOverride(override);
@@ -1221,8 +1255,8 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
           } catch {}
         }
 
-        appendChatMessage('assistant', assistantText);
-        state.chatHistory.push({ role: 'assistant', content: assistantText });
+        appendChatMessage('assistant', finalText);
+        state.chatHistory.push({ role: 'assistant', content: finalText });
 
       } catch (e) {
         typingEl.remove();
