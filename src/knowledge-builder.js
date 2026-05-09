@@ -42,7 +42,7 @@ class KnowledgeBuilder {
     const allDecisions = [];
     const allPlans = [];
     const allCompleted = [];
-    const allPending = [];
+    let allPending = [];
     const allBlockers = [];
     const allQuestions = [];
     const allInsights = [];
