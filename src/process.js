@@ -5,105 +5,71 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import AdmZip from 'adm-zip';
 import DriveAPI from './drive-api.js';
-import ClaudeAPI from './claude-api.js';
+import KnowledgeExtractor from './knowledge-extractor.js';
+import KnowledgeBuilder from './knowledge-builder.js';
+import DigestGenerator from './digest-generator.js';
 import StateManager from './state-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/**
- * Main orchestration for processing Claude conversations
- */
 class ConversationProcessor {
   constructor() {
     this.config = this.loadConfig();
     this.driveAPI = null;
-    this.claudeAPI = null;
+    this.extractor = null;
+    this.builder = null;
+    this.digestGenerator = null;
     this.stateManager = null;
     this.tempDir = path.join(__dirname, '..', 'temp');
   }
 
-  /**
-   * Load configuration from environment
-   */
   loadConfig() {
     const requiredVars = ['GOOGLE_DRIVE_CREDENTIALS', 'GOOGLE_DRIVE_FOLDER_ID', 'ANTHROPIC_API_KEY'];
     const missing = requiredVars.filter(v => !process.env[v]);
 
     if (missing.length > 0) {
-      console.error('❌ Missing required environment variables:', missing.join(', '));
-      console.error('\nPlease set these in GitHub Secrets or create a .env file based on .env.example');
+      console.error('Missing required environment variables:', missing.join(', '));
       process.exit(1);
     }
 
-let credentials;
-        const rawCreds = process.env.GOOGLE_DRIVE_CREDENTIALS;
-        try {
-                credentials = JSON.parse(rawCreds);
-        } catch (e1) {
-                try {
-                          credentials = JSON.parse(Buffer.from(rawCreds, 'base64').toString('utf8'));
-                } catch (e2) {
-                          console.error('❌ Failed to parse GOOGLE_DRIVE_CREDENTIALS as JSON');
-                          console.error('Value starts with:', rawCreds ? rawCreds.substring(0, 20) + '...' : 'undefined');
-                          process.exit(1);
-                }
-        }
+    let credentials;
+    const rawCreds = process.env.GOOGLE_DRIVE_CREDENTIALS;
+    try {
+      credentials = JSON.parse(rawCreds);
+    } catch {
+      try {
+        credentials = JSON.parse(Buffer.from(rawCreds, 'base64').toString('utf8'));
+      } catch {
+        console.error('Failed to parse GOOGLE_DRIVE_CREDENTIALS');
+        process.exit(1);
+      }
+    }
 
     return {
       credentials,
       folderId: process.env.GOOGLE_DRIVE_FOLDER_ID,
       apiKey: process.env.ANTHROPIC_API_KEY,
       forceReprocess: process.env.FORCE_REPROCESS === 'true',
-      logLevel: process.env.LOG_LEVEL || 'info',
     };
-      
   }
 
-  /**
-   * Initialize API clients
-   */
   async initialize() {
-    console.log('🚀 Starting Claude Conversation Processor\n');
+    console.log('Starting Knowledge Base Processor\n');
 
-    // Initialize Drive API
     this.driveAPI = new DriveAPI(this.config.credentials);
     await this.driveAPI.authenticate();
 
-    // Initialize Claude API
-    this.claudeAPI = new ClaudeAPI(this.config.apiKey);
-    console.log('✅ Claude API client initialized');
+    this.extractor = new KnowledgeExtractor(this.config.apiKey);
+    this.builder = new KnowledgeBuilder(this.config.apiKey);
+    this.digestGenerator = new DigestGenerator(this.config.apiKey);
 
-    // Initialize State Manager
     this.stateManager = new StateManager(this.driveAPI, this.config.folderId);
-    await this.stateManager.loadState();
 
-    // Create temp directory
     await fs.mkdir(this.tempDir, { recursive: true });
   }
 
-  /**
-   * List and download ZIP files from Google Drive
-   */
-  async getExportFiles() {
-    console.log('\n📥 Fetching export files from Google Drive...');
-
-    const files = await this.driveAPI.listFiles(
-      this.config.folderId,
-      "mimeType='application/zip' or mimeType='application/x-zip-compressed'"
-    );
-
-    console.log(`Found ${files.length} ZIP file(s)`);
-
-    return files;
-  }
-
-  /**
-   * Extract and parse a ZIP export
-   * @param {string} zipPath
-   * @returns {Promise<Object>} Parsed export data
-   */
-  async extractExport(zipPath) {
+  extractExport(zipPath) {
     const zip = new AdmZip(zipPath);
     const zipEntries = zip.getEntries();
 
@@ -116,203 +82,72 @@ let credentials;
 
     for (const entry of zipEntries) {
       if (entry.entryName === 'conversations.json') {
-        const content = entry.getData().toString('utf8');
-        exportData.conversations = JSON.parse(content);
+        exportData.conversations = JSON.parse(entry.getData().toString('utf8'));
       } else if (entry.entryName === 'projects.json') {
-        const content = entry.getData().toString('utf8');
-        exportData.projects = JSON.parse(content);
+        exportData.projects = JSON.parse(entry.getData().toString('utf8'));
       } else if (entry.entryName === 'memories.json') {
-        const content = entry.getData().toString('utf8');
-        exportData.memories = JSON.parse(content);
+        exportData.memories = JSON.parse(entry.getData().toString('utf8'));
       } else if (entry.entryName === 'users.json') {
-        const content = entry.getData().toString('utf8');
-        exportData.users = JSON.parse(content);
+        exportData.users = JSON.parse(entry.getData().toString('utf8'));
       }
     }
 
     return exportData;
   }
 
-  /**
-   * Process all conversations
-   */
-  async processConversations(exportData) {
-    const { conversations, projects } = exportData;
+  extractMemoryStrings(memories) {
+    if (!memories || memories.length === 0) return [];
+    return memories
+      .filter(m => m && (m.content || m.text || m.summary))
+      .map(m => m.content || m.text || m.summary);
+  }
 
-    console.log(`\n📊 Total conversations in export: ${conversations.length}`);
-    console.log(`📁 Known projects in export: ${projects.length}`);
+  async ensureKnowledgeBaseFolders(parentFolderId) {
+    let kbFolderId = await this.findOrCreateFolder(parentFolderId, 'knowledge-base');
+    let tracksFolderId = await this.findOrCreateFolder(kbFolderId, 'tracks');
+    let metaFolderId = await this.findOrCreateFolder(kbFolderId, 'meta');
+    return { kbFolderId, tracksFolderId, metaFolderId };
+  }
 
-    // Extract known project names
-    const knownProjects = projects
-      .filter(p => !p.is_starter_project)
-      .map(p => p.name);
-
-    console.log('Known projects:', knownProjects.join(', ') || 'None');
-
-    // Filter conversations that need processing
-    const { toProcess, skipped } = this.stateManager.filterConversations(
-      conversations,
-      this.config.forceReprocess
+  async findOrCreateFolder(parentId, folderName) {
+    const existing = await this.driveAPI.listFiles(
+      parentId,
+      `name='${folderName}' and mimeType='application/vnd.google-apps.folder'`
     );
 
-    console.log(`\n🔄 To process: ${toProcess.length}`);
-    console.log(`⏭️  Skipped (already processed): ${skipped.length}`);
+    if (existing.length > 0) return existing[0].id;
 
-    if (toProcess.length === 0) {
-      console.log('\n✅ All conversations are up to date!');
-      return [];
-    }
+    const response = await this.driveAPI.drive.files.create({
+      requestBody: {
+        name: folderName,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: [parentId],
+      },
+      fields: 'id',
+      supportsAllDrives: true,
+    });
 
-    // Process conversations with Claude API
-    const results = await this.claudeAPI.processConversations(toProcess, knownProjects);
-
-    // Mark successful ones as processed
-    for (const result of results) {
-      if (result.success) {
-        this.stateManager.markProcessed(result.conversation, result.metadata);
-      }
-    }
-
-    return results;
+    console.log(`  Created folder: ${folderName}`);
+    return response.data.id;
   }
 
-  /**
-   * Generate project ID from name
-   */
-  slugify(name) {
-    return name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
+  async loadPriorities(kbFolderId) {
+    try {
+      const data = await this.driveAPI.downloadJSON(kbFolderId, 'priorities.json');
+      if (data && Array.isArray(data.priorities)) {
+        console.log(`  Loaded ${data.priorities.length} priority override(s)`);
+        return data.priorities;
+      }
+    } catch {
+      // No priorities file yet
+    }
+    return [];
   }
 
-  /**
-   * Assign emoji and color based on project name
-   */
-  getProjectStyle(projectName) {
-    const name = projectName.toLowerCase();
-
-    // Keyword-based matching
-    const styles = {
-      ai: { emoji: '🧠', color: '#9333ea' },
-      learn: { emoji: '📚', color: '#0ea5e9' },
-      finance: { emoji: '💰', color: '#f59e0b' },
-      home: { emoji: '🏠', color: '#3b82f6' },
-      automation: { emoji: '⚙️', color: '#10b981' },
-      productivity: { emoji: '📊', color: '#8b5cf6' },
-      health: { emoji: '❤️', color: '#ef4444' },
-      wellbeing: { emoji: '🧘', color: '#ec4899' },
-      misc: { emoji: '📝', color: '#6b7280' },
-    };
-
-    for (const [keyword, style] of Object.entries(styles)) {
-      if (name.includes(keyword)) {
-        return style;
-      }
-    }
-
-    // Default style
-    return { emoji: '📁', color: '#6b7280' };
-  }
-
-  /**
-   * Merge results into tracking projects.json
-   */
-  async updateTrackingData(results, userEmail) {
-    console.log(`\n📝 Updating tracking data for ${userEmail}...`);
-
-    const fileName = `projects-${userEmail}.json`;
-
-    // Load existing tracking data for this user
-    let trackingData = await this.driveAPI.downloadJSON(
-      this.config.folderId,
-      fileName
-    );
-
-    if (!trackingData || !trackingData.projects) {
-      trackingData = {
-        projects: [],
-        lastUpdated: new Date().toISOString(),
-      };
-    }
-
-    // Group results by project
-    const projectMap = new Map();
-
-    // Initialize with existing projects
-    for (const project of trackingData.projects) {
-      projectMap.set(project.id, project);
-    }
-
-    // Add new conversations
-    for (const result of results) {
-      if (!result.success) continue;
-
-      const { conversation, metadata } = result;
-      const projectName = metadata.projectName;
-      const projectId = this.slugify(projectName);
-
-      // Remove conversation from ALL other projects first (handles re-categorization)
-      for (const [pid, proj] of projectMap.entries()) {
-        proj.conversations = proj.conversations.filter(c => c.uuid !== conversation.uuid);
-      }
-
-      // Get or create project
-      if (!projectMap.has(projectId)) {
-        const style = this.getProjectStyle(projectName);
-        projectMap.set(projectId, {
-          id: projectId,
-          name: projectName,
-          emoji: style.emoji,
-          color: style.color,
-          conversations: [],
-        });
-      }
-
-      const project = projectMap.get(projectId);
-
-      // Add conversation (we know it's not in any project now)
-      const convEntry = {
-        uuid: conversation.uuid,
-        name: conversation.name,
-        topic: metadata.topic,
-        progressSummary: metadata.progressSummary,
-        progressPercent: metadata.progressPercent,
-        nextSteps: metadata.nextSteps,
-        lastUpdated: conversation.updated_at,
-        reviewDate: metadata.reviewDate,
-        completed: metadata.progressPercent >= 100,
-        notes: '',
-      };
-      project.conversations.push(convEntry);
-    }
-
-    // Convert map to array, remove empty projects, and sort conversations
-    trackingData.projects = Array.from(projectMap.values())
-      .filter(project => project.conversations.length > 0); // Remove empty projects
-
-    for (const project of trackingData.projects) {
-      project.conversations.sort((a, b) => a.reviewDate.localeCompare(b.reviewDate));
-    }
-
-    trackingData.lastUpdated = new Date().toISOString();
-
-    // Upload to Drive with user-specific filename
-    await this.driveAPI.uploadJSON(this.config.folderId, fileName, trackingData);
-
-    console.log(`✅ Updated ${fileName} with ${results.filter(r => r.success).length} conversations`);
-
-    return trackingData;
-  }
-
-  /**
-   * Clean up queue by removing stale items
-   */
   async cleanupQueue(queue) {
     const now = Date.now();
     const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
 
-    // Get all ZIP files currently in Drive
     const driveFiles = await this.driveAPI.listFiles(
       this.config.folderId,
       "mimeType='application/zip' or mimeType='application/x-zip-compressed'"
@@ -320,18 +155,16 @@ let credentials;
     const driveFileIds = new Set(driveFiles.map(f => f.id));
 
     queue.queue = queue.queue.filter(item => {
-      // Remove completed items older than 1 week
       if (item.status === 'completed' && item.processedAt) {
         const processedTime = new Date(item.processedAt).getTime();
         if (now - processedTime > ONE_WEEK) {
-          console.log(`  🗑️  Removing old completed item: ${item.zipFileName}`);
+          console.log(`  Removing old completed item: ${item.zipFileName}`);
           return false;
         }
       }
 
-      // Remove failed items where ZIP file no longer exists in Drive
       if ((item.status === 'failed' || item.status === 'pending') && !driveFileIds.has(item.zipFileId)) {
-        console.log(`  🗑️  Removing item with deleted ZIP: ${item.zipFileName}`);
+        console.log(`  Removing item with deleted ZIP: ${item.zipFileName}`);
         return false;
       }
 
@@ -339,143 +172,190 @@ let credentials;
     });
   }
 
-  /**
-   * Cleanup temporary files
-   */
   async cleanup() {
     try {
       await fs.rm(this.tempDir, { recursive: true, force: true });
-    } catch (error) {
+    } catch {
       // Ignore cleanup errors
     }
   }
 
-  /**
-   * Main execution flow
-   */
   async run() {
     const startTime = Date.now();
 
     try {
       await this.initialize();
 
-      // Read queue from Drive
       let queue = await this.driveAPI.downloadJSON(
         this.config.folderId,
         'process-queue.json'
       );
 
       if (!queue || !queue.queue || queue.queue.length === 0) {
-        console.log('\n⚠️  No items in processing queue');
+        console.log('\nNo items in processing queue');
         return;
       }
 
-      // Clean up queue: remove old failed items and items with deleted ZIP files
       const beforeCleanup = queue.queue.length;
       await this.cleanupQueue(queue);
       const afterCleanup = queue.queue.length;
 
       if (beforeCleanup !== afterCleanup) {
-        console.log(`\n🧹 Cleaned up ${beforeCleanup - afterCleanup} stale queue item(s)`);
-        // Save cleaned queue
+        console.log(`\nCleaned up ${beforeCleanup - afterCleanup} stale queue item(s)`);
         await this.driveAPI.uploadJSON(this.config.folderId, 'process-queue.json', queue);
       }
 
-      // Filter pending items
       const pendingItems = queue.queue.filter(item => item.status === 'pending');
 
       if (pendingItems.length === 0) {
-        console.log('\n✅ All queue items already processed');
+        console.log('\nAll queue items already processed');
         return;
       }
 
-      console.log(`\n📋 Found ${pendingItems.length} pending item(s) in queue`);
+      console.log(`\nFound ${pendingItems.length} pending item(s) in queue`);
 
-      let totalProcessed = 0;
+      let totalExtracted = 0;
       let totalErrors = 0;
 
-      // Process each pending item
       for (const item of pendingItems) {
         try {
           console.log(`\n${'='.repeat(60)}`);
-          console.log(`📦 Processing: ${item.zipFileName}`);
-          console.log(`👤 User: ${item.email}`);
-          console.log(`${'='.repeat(60)}`);
+          console.log(`Processing: ${item.zipFileName}`);
+          console.log(`User: ${item.email}`);
+          console.log('='.repeat(60));
 
-          // Load user-specific state
+          // 1. Load user-specific state
           this.stateManager.setUserEmail(item.email);
           await this.stateManager.loadState();
 
-          // Download export
+          // 2. Download + extract ZIP
           const zipPath = path.join(this.tempDir, item.zipFileName);
           await this.driveAPI.downloadFile(item.zipFileId, zipPath);
-          console.log('✅ Downloaded export');
+          const exportData = this.extractExport(zipPath);
 
-          // Extract and parse
-          const exportData = await this.extractExport(zipPath);
-          console.log('✅ Extracted export data');
+          const knownTracks = exportData.projects
+            .filter(p => !p.is_starter_project)
+            .map(p => p.name);
 
-          // Process conversations (will filter based on state)
-          const results = await this.processConversations(exportData);
+          // Skip empty conversations
+          const validConversations = exportData.conversations.filter(
+            c => c.name && (c.summary || (c.chat_messages && c.chat_messages.length > 0))
+          );
 
-          // Update tracking data for this user
-          if (results.length > 0) {
-            await this.updateTrackingData(results, item.email);
+          console.log(`Total conversations: ${exportData.conversations.length} (${validConversations.length} valid)`);
+
+          // 3. Filter new/changed conversations
+          const { toProcess, skipped } = this.stateManager.filterConversations(
+            validConversations,
+            this.config.forceReprocess
+          );
+
+          console.log(`To extract: ${toProcess.length} | Skipped: ${skipped.length}`);
+
+          // 4. Knowledge extraction (per conversation)
+          let extractionResults = [];
+          if (toProcess.length > 0) {
+            extractionResults = await this.extractor.processConversations(toProcess, knownTracks);
+
+            for (const result of extractionResults) {
+              if (result.success) {
+                this.stateManager.markProcessed(result.conversation, { projectName: result.knowledge.track });
+                totalExtracted++;
+              } else {
+                totalErrors++;
+              }
+            }
+
+            await this.stateManager.saveState();
           }
 
-          // Save user-specific state
-          await this.stateManager.saveState();
+          // Also load previously extracted results from state for full knowledge base rebuild
+          // For conversations we skipped, reconstruct minimal extraction data from state
+          const allResults = [...extractionResults];
+          // New extractions are enough for the builder — skipped conversations'
+          // knowledge is already in the track docs from previous runs.
+          // We only need to rebuild if there are new extractions.
 
-          // Update queue item status
+          if (extractionResults.filter(r => r.success).length === 0 && !this.config.forceReprocess) {
+            console.log('No new extractions — skipping knowledge base rebuild');
+            item.status = 'completed';
+            item.processedAt = new Date().toISOString();
+            item.conversationsExtracted = 0;
+            continue;
+          }
+
+          // 5. Ensure Drive folder structure
+          const { kbFolderId, tracksFolderId, metaFolderId } =
+            await this.ensureKnowledgeBaseFolders(this.config.folderId);
+
+          // 6. Build knowledge base (track docs + synthesis)
+          // For a full rebuild, we'd need all extractions. For incremental,
+          // we load existing track docs from Drive and merge new results in.
+          // For now, build from all successful extractions in this run.
+          // Future: merge with existing track docs for incremental updates.
+          const memories = this.extractMemoryStrings(exportData.memories);
+          const { trackDocuments, synthesis } = await this.builder.build(
+            extractionResults.filter(r => r.success)
+          );
+
+          // 7. Upload track docs to Drive
+          for (const { slug, document } of trackDocuments) {
+            await this.driveAPI.uploadFile(
+              tracksFolderId, `${slug}.md`, document, 'text/markdown'
+            );
+          }
+
+          // 8. Upload synthesis
+          if (synthesis) {
+            await this.driveAPI.uploadFile(
+              metaFolderId, 'synthesis.md', synthesis, 'text/markdown'
+            );
+          }
+
+          // 9. Load priorities and generate digest
+          const priorities = await this.loadPriorities(kbFolderId);
+          const digest = await this.digestGenerator.generate(
+            trackDocuments, synthesis, priorities, memories
+          );
+
+          if (digest) {
+            await this.driveAPI.uploadJSON(
+              kbFolderId, `digest-${item.email}.json`, digest
+            );
+          }
+
+          // 10. Mark queue item complete
           item.status = 'completed';
           item.processedAt = new Date().toISOString();
-          item.conversationsProcessed = results.filter(r => r.success).length;
+          item.conversationsExtracted = extractionResults.filter(r => r.success).length;
 
-          const successCount = results.filter(r => r.success).length;
-          const errorCount = results.filter(r => !r.success).length;
-          totalProcessed += successCount;
-          totalErrors += errorCount;
-
-          console.log(`✅ Processed ${successCount} conversations for ${item.email}`);
+          console.log(`\nCompleted processing for ${item.email}`);
         } catch (error) {
-          console.error(`❌ Error processing ${item.zipFileName}:`, error.message);
+          console.error(`Error processing ${item.zipFileName}:`, error.message);
           item.status = 'failed';
           item.error = error.message;
           totalErrors++;
         }
       }
 
-      // Save updated queue back to Drive
       await this.driveAPI.uploadJSON(this.config.folderId, 'process-queue.json', queue);
-      console.log('\n✅ Updated queue status');
 
-      // Generate summary
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
       console.log('\n' + '='.repeat(60));
-      console.log('✅ PROCESSING COMPLETE');
+      console.log('PROCESSING COMPLETE');
       console.log('='.repeat(60));
-      console.log(`📊 Processed: ${totalProcessed} conversations`);
-      console.log(`❌ Errors: ${totalErrors}`);
-      console.log(`👥 Users: ${pendingItems.length}`);
-      console.log(`⏱️  Duration: ${duration}s`);
+      console.log(`Extracted: ${totalExtracted} conversations`);
+      console.log(`Errors: ${totalErrors}`);
+      console.log(`Duration: ${duration}s`);
       console.log('='.repeat(60));
-
-      // Write summary for GitHub Actions
-      const summary = {
-        processed: totalProcessed,
-        errors: totalErrors,
-        users: pendingItems.length,
-        duration: `${duration}s`,
-        timestamp: new Date().toISOString(),
-      };
 
       await fs.writeFile(
         path.join(__dirname, '..', 'processing-summary.json'),
-        JSON.stringify(summary, null, 2)
+        JSON.stringify({ extracted: totalExtracted, errors: totalErrors, duration: `${duration}s`, timestamp: new Date().toISOString() }, null, 2)
       );
     } catch (error) {
-      console.error('\n❌ Fatal error:', error.message);
+      console.error('\nFatal error:', error.message);
       console.error(error.stack);
       process.exit(1);
     } finally {
@@ -484,7 +364,6 @@ let credentials;
   }
 }
 
-// Run if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   const processor = new ConversationProcessor();
   processor.run();

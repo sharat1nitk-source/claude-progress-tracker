@@ -4,242 +4,117 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A privacy-preserving, multi-user system for tracking Claude.ai conversation progress across projects. The system:
-1. Processes Claude conversation exports (ZIP files) from Google Drive
-2. Uses Claude API to extract structured metadata (project, progress %, next steps)
-3. Stores tracking data in user-specific files on Google Drive (never publicly committed)
-4. PWA authenticates users via Google OAuth and shows only their own data
+A personal AI knowledge assistant that processes Claude.ai chat exports into a living knowledge base. The system:
+1. Extracts structured knowledge from every conversation (tracks, decisions, tasks, blockers)
+2. Builds per-track documents and cross-track synthesis
+3. Generates a visual digest with focus recommendations
+4. Provides a chat interface to query your knowledge base
+5. All data stays private on Google Drive — never committed to the public repo
 
-**Privacy Model:** Each user's data is isolated in `projects-{email}.json` files on Drive. The PWA requires authentication and only displays the authenticated user's projects. No user data is ever committed to the public repository.
-
-**Tech Stack:** Node.js (ES modules), Google Drive API, Anthropic API, Google OAuth 2.0, vanilla JavaScript PWA
+**Tech Stack:** Node.js (ES modules), Google Drive API, Anthropic API (Claude Sonnet), Google OAuth 2.0, vanilla JavaScript PWA
 
 ## Development Commands
 
-### Running the Processor Locally
 ```bash
-# Setup
 npm install
+cp .env.example .env   # fill in credentials
+npm start              # runs src/process.js pipeline
 
-# Create .env from .env.example and fill in credentials
-cp .env.example .env
-
-# Run processor (requires ZIP exports in Google Drive)
-npm start
-```
-
-### Testing the PWA
-```bash
-# Serve the root directory (index.html is at root)
+# Serve PWA locally
 python3 -m http.server 8000
 # Open http://localhost:8000
-
-# Note: PWA requires OAuth authentication and reads user-specific data from Google Drive
-# Configure OAuth Client ID and Drive Folder ID in Settings after first launch
 ```
 
-### GitHub Actions Workflow
-```bash
-# Workflow runs automatically daily at 2 AM UTC
-# Manual trigger: Actions tab → "Process Claude Conversations" → "Run workflow"
-
-# Force reprocess all conversations (ignore state):
-# Use workflow_dispatch with force_reprocess: true
-```
+### GitHub Actions
+- Runs daily at 2 AM UTC or manually from Actions tab
+- Manual trigger: Actions > "Process Claude Conversations" > "Run workflow"
+- Force reprocess: enable `force_reprocess` input
 
 ## Architecture
 
-### Data Flow (Privacy-Preserving)
+### Pipeline (runs in GitHub Actions)
 ```
-Claude.ai Export (ZIP) 
-  → Google Drive shared folder (process-queue.json tracks pending ZIPs)
-  → GitHub Actions downloads & extracts
-  → Claude API processes each conversation
-  → State saved to Drive (processed_conversations-{email}.json per user)
-  → Tracking data uploaded to Drive (projects-{email}.json per user)
-  → NO PUBLIC COMMIT - data stays private on Drive
-  → PWA authenticates user via OAuth
-  → PWA reads only that user's projects-{email}.json from Drive
-  → User sees only their own conversations
+Claude.ai export ZIP (on Google Drive)
+  -> process.js reads process-queue.json
+  -> Downloads + extracts ZIP (conversations.json, projects.json, memories.json)
+  -> knowledge-extractor.js: per-conversation extraction via Claude Sonnet
+  -> state-manager.js: delta processing (skip unchanged conversations)
+  -> knowledge-builder.js: build track docs + cross-track synthesis via Claude Sonnet
+  -> digest-generator.js: generate structured digest JSON via Claude Sonnet
+  -> All outputs written to Google Drive knowledge-base/ folder
 ```
 
-### Multi-User Privacy Architecture
-The system supports multiple users while maintaining complete data isolation:
-- **Backend Processing:** Each user has separate state (`processed_conversations-{email}.json`) and projects (`projects-{email}.json`) files on Drive
-- **Frontend Access:** PWA requires Google OAuth authentication. After sign-in, users can only access their own `projects-{email}.json` file
-- **No Cross-User Data Access:** Users cannot see other users' conversations or projects
-- **No Public Data:** User data is NEVER committed to the public GitHub repository
-- **Shared Infrastructure:** All users share the same Drive folder and processing workflow, but data is isolated by email
+### PWA (index.html)
+```
+Tab 1: Focus Brief — reads digest-{email}.json, shows priorities + track cards
+Tab 2: Chat — conversational Q&A over knowledge base via Claude Sonnet (browser-side API call)
+Tab 3: Exports — queue management for ZIP processing
+```
 
 ### Source Structure
 
-**src/process.js** (Main orchestrator)
-- ConversationProcessor class coordinates entire flow
-- Reads process-queue.json to find pending ZIP files
-- Cleans up queue (removes items with deleted ZIPs, old completed items)
-- Downloads ZIPs from Drive, extracts conversations.json
-- Calls ClaudeAPI to process new/updated conversations
-- Updates user-specific projects-{email}.json with results
-- Aggregates all user projects into projects.json
-- Key methods: `run()`, `processConversations()`, `updateTrackingData()`, `cleanupQueue()`
+**src/knowledge-extractor.js** — Per-conversation knowledge extraction
+- One Claude Sonnet call per conversation
+- Extracts: track, conversation_type, narrative_summary, decisions, plans, tasks, blockers, insights, connections, status, importance
+- Accumulates track names across conversations for consistency
 
-**src/claude-api.js** (Claude API client)
-- Batches conversation processing
-- Sends conversation name + summary + known projects list to Claude
-- Claude extracts: projectName, topic, progressPercent, progressSummary, nextSteps, reviewDate
-- Returns structured metadata for each conversation
+**src/knowledge-builder.js** — Track document + synthesis generation
+- Groups extraction results by track
+- Builds markdown document per track (decisions, plans, tasks, blockers, insights, history table)
+- Single Claude Sonnet call for cross-track synthesis (dependencies, priority matrix, themes)
 
-**src/drive-api.js** (Google Drive operations)
-- Authenticates with service account credentials
-- Methods: `listFiles()`, `downloadFile()`, `uploadJSON()`, `downloadJSON()`
-- Handles both file downloads and JSON read/write
+**src/digest-generator.js** — Visual digest JSON generation
+- Single Claude Sonnet call with all track docs + synthesis
+- Reads priorities.json (user-stated overrides from Chat tab)
+- Reads memories from export for additional context
+- Outputs structured JSON consumed by PWA Focus Brief tab
 
-**src/state-manager.js** (Delta processing)
-- Tracks processed conversations in `processed_conversations-{email}.json` on Drive
-- Computes content hash to detect changes
-- `filterConversations()` returns only new/modified conversations
-- Enables efficient incremental processing (doesn't reprocess unchanged conversations)
-- User-specific state prevents cross-user reprocessing
+**src/process.js** — Main pipeline orchestrator
+- Reads process-queue.json from Drive
+- Downloads/extracts ZIPs, filters new conversations via state-manager
+- Runs extraction -> build -> digest pipeline
+- Creates knowledge-base/ folder structure on Drive
 
-**~~src/download-projects.js~~** (REMOVED)
-- Previously downloaded projects.json to repo - removed for privacy
-- User data is never committed to public repository
+**src/drive-api.js** — Google Drive API wrapper (service account auth, file CRUD)
 
-**index.html** (PWA frontend)
-- Single-file PWA with inline CSS and JavaScript
-- Requires Google OAuth authentication (redirect-based flow)
-- Reads user-specific `projects-{email}.json` from Google Drive
-- Displays only authenticated user's projects and conversations
-- Supports filtering, completion marking, and settings
-- User state stored in localStorage (OAuth tokens, preferences)
-- Privacy-first: No cross-user data access
+**src/state-manager.js** — Delta processing (SHA256 content hashing, skip unchanged conversations)
 
-**service-worker.js** (Offline support)
-- Caches PWA assets for offline access
-- Does NOT cache user data (always fresh from Drive)
+**index.html** — Single-file PWA with three tabs
+- OAuth redirect flow for Google auth
+- Reads digest from Drive knowledge-base/ folder
+- Chat sends questions to Claude Sonnet with knowledge base as context
+- Priority overrides from chat saved to knowledge-base/priorities.json on Drive
 
-### Key Data Structures
+### Data on Google Drive
 
-**projects-{email}.json** (per-user tracking data in Drive - PRIVATE):
-```javascript
-{
-  "projects": [
-    {
-      "id": "ai-learning",  // slugified name
-      "name": "AI Learning",
-      "emoji": "🧠",
-      "color": "#9333ea",
-      "conversations": [
-        {
-          "uuid": "...",
-          "name": "Intel hyper-threading...",
-          "topic": "CPU Architecture",
-          "progressSummary": "Learned about...",
-          "progressPercent": 75,
-          "nextSteps": ["Research...", "Test..."],
-          "lastUpdated": "2026-04-19T...",
-          "reviewDate": "2026-05-03",
-          "completed": false,
-          "notes": ""
-        }
-      ]
-    }
-  ],
-  "lastUpdated": "2026-04-20T12:00:00Z"
-}
 ```
-**Privacy Note:** This file is stored ONLY on Google Drive and never committed to the repository. Each user has their own file accessible only to them via OAuth.
-
-**processed_conversations-{email}.json** (per-user state in Drive):
-```javascript
-{
-  "conversations": {
-    "uuid": {
-      "lastProcessedAt": "...",
-      "lastModifiedTime": "...",
-      "contentHash": "...",
-      "projectName": "AI Learning"
-    }
-  },
-  "lastRunAt": "..."
-}
+{folder}/
+  process-queue.json              — export processing queue
+  processed_conversations-{email}.json — delta state per user
+  knowledge-base/
+    digest-{email}.json           — structured digest for PWA
+    priorities.json               — user-stated priority overrides
+    tracks/{slug}.md              — per-track knowledge document
+    meta/synthesis.md             — cross-track synthesis
 ```
 
-### Project Auto-Categorization
+## Key Design Decisions
 
-Projects are auto-created from Claude API responses. `getProjectStyle()` in process.js assigns emoji/color based on project name keywords:
-- "ai" → 🧠 purple
-- "learn" → 📚 blue
-- "finance" → 💰 orange
-- "automation" → ⚙️ green
-- etc.
-
-When adding new categories, update the `styles` object in `ConversationProcessor.getProjectStyle()`.
+- **All Claude calls use claude-sonnet-4-6** — quality matters more than cost savings from Haiku
+- **Priorities persist via priorities.json** — Chat tab writes priority overrides to Drive, digest generator reads them
+- **memories.json from export** feeds into digest generation for additional user context
+- **1-hour cache TTL** on digest and synthesis in the PWA for offline/performance
+- **Track slugs** are lowercase-hyphenated: "Career Transition" -> "career-transition"
+- **Empty conversations** (no name, no summary, no messages) are skipped
 
 ## Setup Requirements
 
-### GitHub Secrets (for backend processing)
-Set these in repository Settings → Secrets and variables → Actions:
+### GitHub Secrets
+1. **GOOGLE_DRIVE_CREDENTIALS** — Service account JSON
+2. **GOOGLE_DRIVE_FOLDER_ID** — Shared Drive folder ID
+3. **ANTHROPIC_API_KEY** — From console.anthropic.com
 
-1. **GOOGLE_DRIVE_CREDENTIALS** - Service account JSON (entire file contents)
-2. **GOOGLE_DRIVE_FOLDER_ID** - Shared Drive folder ID from URL
-3. **ANTHROPIC_API_KEY** - API key from console.anthropic.com
-
-### OAuth Setup (for PWA authentication)
-1. Create OAuth 2.0 Client ID in Google Cloud Console
-2. Add authorized redirect URIs (your GitHub Pages URL)
-3. Users configure their OAuth Client ID in PWA Settings
-4. Users authenticate and grant Drive access to read their projects file
-
-**Important:** The Drive folder must be a Shared Drive, not a personal folder. Service accounts cannot access personal Drive folders.
-
-## Important Implementation Notes
-
-### Delta Processing
-The state-manager.js ensures only new or modified conversations are sent to Claude API. Never bypass this unless explicitly force reprocessing. This keeps API costs low.
-
-### Conversation Sorting
-In PWA, conversations are sorted by last update date (most recent first). The project `updateTrackingData()` sorts by review date for action prioritization.
-
-### PWA Data Source & Privacy
-The PWA reads user-specific `projects-{email}.json` files directly from Google Drive via OAuth. No user data is ever committed to the repository or served via GitHub Pages. This ensures complete privacy - users can only access their own conversation data after authentication.
-
-### Error Handling
-If Claude API processing fails for some conversations, those are skipped but others continue. Check workflow logs for error details. Failed conversations will retry on next run since they weren't marked as processed.
-
-### Queue Management
-The process-queue.json file tracks all ZIP files to be processed:
-- New ZIPs are added with status 'pending'
-- Successfully processed ZIPs are marked 'completed'
-- Failed ZIPs are marked 'failed' with error message
-- Queue cleanup runs before each processing session:
-  - Removes items where ZIP file has been deleted from Drive
-  - Removes completed items older than 1 week
-  - Prevents repeated processing of deleted files
-
-## Common Development Scenarios
-
-### Adding a New Metadata Field
-1. Update Claude API prompt in `claude-api.js` (extractMetadata method)
-2. Parse the new field in the API response
-3. Update conversation schema in `process.js` (updateTrackingData method)
-4. Update PWA UI in `index.html` to display the field
-
-### Debugging Processing Issues
-1. Check GitHub Actions logs for the specific run
-2. Verify ZIP file is in Google Drive folder
-3. Test locally with `npm start` (requires .env setup)
-4. Check Drive for processed_conversations.json to see state
-
-### Testing PWA Changes
-1. Edit index.html, service-worker.js, or manifest.json
-2. Serve locally: `python3 -m http.server 8000`
-3. Commit changes - GitHub Pages auto-deploys from main branch
-4. Update service worker version to force cache refresh
-
-### Modifying the Processing Schedule
-Edit `.github/workflows/process-conversations.yml`:
-```yaml
-schedule:
-  - cron: '0 2 * * *'  # Daily at 2 AM UTC
-```
+### PWA Settings (configured in-app)
+1. Google OAuth Client ID
+2. Google Drive Folder ID
+3. Anthropic API Key (for Chat tab, stored in localStorage only)

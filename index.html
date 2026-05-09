@@ -3,51 +3,50 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="description" content="Track your Claude.ai conversation progress across projects">
+  <meta name="description" content="Personal Knowledge Assistant powered by Claude.ai conversation history">
   <meta name="theme-color" content="#9333ea">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
-  <title>Claude Progress Tracker</title>
+  <title>Claude Knowledge Assistant</title>
   <link rel="manifest" href="manifest.json">
   <script src="https://apis.google.com/js/api.js"></script>
 
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
     :root {
       --primary: #9333ea;
       --primary-dark: #7e22ce;
+      --primary-light: #a855f7;
       --bg: #ffffff;
       --bg-secondary: #f9fafb;
+      --bg-tertiary: #f3f4f6;
       --text: #111827;
       --text-secondary: #6b7280;
+      --text-muted: #9ca3af;
       --border: #e5e7eb;
       --success: #10b981;
       --warning: #f59e0b;
       --error: #ef4444;
       --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
       --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+      --radius: 0.75rem;
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: var(--bg-secondary);
       color: var(--text);
       line-height: 1.6;
       -webkit-font-smoothing: antialiased;
     }
 
-    /* Header */
     .header {
       background: var(--bg);
       border-bottom: 1px solid var(--border);
-      padding: 1rem;
+      padding: 0.75rem 1rem;
       position: sticky;
       top: 0;
       z-index: 100;
@@ -55,7 +54,7 @@
     }
 
     .header-content {
-      max-width: 1200px;
+      max-width: 900px;
       margin: 0 auto;
       display: flex;
       justify-content: space-between;
@@ -63,7 +62,7 @@
     }
 
     .header h1 {
-      font-size: 1.5rem;
+      font-size: 1.25rem;
       font-weight: 700;
       color: var(--primary);
     }
@@ -74,61 +73,21 @@
       align-items: center;
     }
 
-    .last-sync {
-      font-size: 0.875rem;
-      color: var(--text-secondary);
-      margin-right: 1rem;
-    }
-
-    .auth-container {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
     .user-profile {
       display: flex;
       align-items: center;
       gap: 0.5rem;
-      padding: 0.5rem;
+      padding: 0.375rem 0.5rem;
       background: var(--bg-secondary);
       border-radius: 0.5rem;
       border: 1px solid var(--border);
+      font-size: 0.75rem;
     }
 
     .user-avatar {
-      width: 32px;
-      height: 32px;
+      width: 24px;
+      height: 24px;
       border-radius: 50%;
-      object-fit: cover;
-    }
-
-    .user-email {
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-      max-width: 150px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .sync-status {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-      padding: 0.25rem 0.5rem;
-      background: var(--bg-secondary);
-      border-radius: 0.375rem;
-    }
-
-    .sync-status.syncing {
-      color: var(--warning);
-    }
-
-    .sync-status.synced {
-      color: var(--success);
     }
 
     button {
@@ -141,688 +100,506 @@
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s;
-      min-height: 44px;
+      min-height: 36px;
     }
 
-    button:hover {
-      background: var(--primary-dark);
-    }
+    button:hover { background: var(--primary-dark); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.secondary { background: var(--bg-secondary); color: var(--text); border: 1px solid var(--border); }
+    button.secondary:hover { background: var(--bg-tertiary); }
+    button.small { padding: 0.25rem 0.75rem; font-size: 0.8rem; min-height: 28px; }
 
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    button.secondary {
-      background: var(--bg-secondary);
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
-
-    /* Main Content */
     .container {
-      max-width: 1200px;
+      max-width: 900px;
       margin: 0 auto;
-      padding: 1.5rem 1rem;
-    }
-
-    .loading {
-      text-align: center;
-      padding: 3rem;
-      color: var(--text-secondary);
+      padding: 1rem;
     }
 
     .spinner {
       border: 3px solid var(--border);
       border-top: 3px solid var(--primary);
       border-radius: 50%;
-      width: 40px;
-      height: 40px;
+      width: 32px;
+      height: 32px;
       animation: spin 1s linear infinite;
-      margin: 0 auto 1rem;
+      margin: 0 auto;
     }
 
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* Tabs */
     .tabs {
       display: flex;
-      gap: 0.5rem;
+      gap: 0;
       border-bottom: 2px solid var(--border);
-      margin-bottom: 1.5rem;
+      margin-bottom: 1.25rem;
     }
 
     .tab {
-      padding: 0.75rem 1.5rem;
+      padding: 0.625rem 1.25rem;
       background: none;
-      border: none;
-      border-bottom: 3px solid transparent;
       color: var(--text-secondary);
-      font-weight: 600;
-      cursor: pointer;
+      font-weight: 500;
+      border-radius: 0;
+      min-height: unset;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
       transition: all 0.2s;
-      min-height: auto;
     }
 
-    .tab:hover {
-      background: var(--bg-secondary);
-      color: var(--text);
-    }
+    .tab:hover { color: var(--text); background: none; }
+    .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; background: none; }
 
-    .tab.active {
-      color: var(--primary);
-      border-bottom-color: var(--primary);
-      background: none;
-    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
 
-    .tab-content {
-      display: none;
-    }
-
-    .tab-content.active {
-      display: block;
-    }
-
-    /* Filters */
-    .filters {
-      display: flex;
-      gap: 1rem;
-      margin-bottom: 1.5rem;
-      flex-wrap: wrap;
-      align-items: center;
-    }
-
-    .filter-group {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .filter-group label {
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: var(--text);
-    }
-
-    .filter-group select {
-      padding: 0.5rem 2rem 0.5rem 0.75rem;
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      font-size: 0.875rem;
-      background: var(--bg);
-      color: var(--text);
-      cursor: pointer;
-      min-height: 44px;
-      appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 0.75rem center;
-    }
-
-    /* Conversations List */
-    .conversations-list {
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-    }
-
-    /* Project Card */
-    .project-card {
-      background: var(--bg);
-      border-radius: 0.75rem;
+    /* Focus Brief */
+    .hero {
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: white;
       padding: 1.5rem;
-      box-shadow: var(--shadow);
-      border-left: 4px solid;
-      transition: transform 0.2s, box-shadow 0.2s;
+      border-radius: var(--radius);
+      margin-bottom: 1.25rem;
     }
 
-    .project-card:hover {
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-lg);
-    }
+    .hero h2 { font-size: 1rem; opacity: 0.85; margin-bottom: 0.5rem; font-weight: 500; }
+    .hero p { font-size: 1.05rem; line-height: 1.6; }
+    .hero .meta { font-size: 0.75rem; opacity: 0.6; margin-top: 0.75rem; }
 
-    .project-header {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      margin-bottom: 1rem;
-    }
-
-    .project-emoji {
-      font-size: 2rem;
-    }
-
-    .project-info {
-      flex: 1;
-    }
-
-    .project-name {
-      font-size: 1.25rem;
-      font-weight: 700;
-      margin-bottom: 0.25rem;
-    }
-
-    .project-stats {
-      font-size: 0.875rem;
-      color: var(--text-secondary);
-    }
-
-    /* Conversations */
-    .conversations {
-      margin-top: 1rem;
-    }
-
-    .conversation-item {
-      padding: 1rem;
-      margin-bottom: 0.75rem;
-      background: var(--bg-secondary);
-      border-radius: 0.5rem;
-      border: 1px solid var(--border);
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .conversation-item:hover {
-      border-color: var(--primary);
+    .track-card {
       background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 0.75rem;
+      box-shadow: var(--shadow);
     }
 
-    .conversation-header {
+    .track-header {
       display: flex;
       justify-content: space-between;
-      align-items: start;
-      margin-bottom: 0.5rem;
-    }
-
-    .conversation-topic {
-      font-weight: 600;
-      color: var(--text);
-      margin-bottom: 0.25rem;
-    }
-
-    .project-badge {
-      display: inline-flex;
       align-items: center;
-      gap: 0.25rem;
-      padding: 0.25rem 0.5rem;
-      border-radius: 0.375rem;
-      font-size: 0.75rem;
-      font-weight: 600;
       margin-bottom: 0.5rem;
-      color: white;
     }
 
-    .project-badge-emoji {
+    .track-name { font-weight: 700; font-size: 1.05rem; }
+
+    .status-badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-radius: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .status-active { background: #dcfce7; color: #166534; }
+    .status-stalling { background: #fef3c7; color: #92400e; }
+    .status-blocked { background: #fee2e2; color: #991b1b; }
+    .status-completed { background: #e0e7ff; color: #3730a3; }
+
+    .track-focus { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.75rem; }
+
+    .priority-list { list-style: none; padding: 0; margin: 0 0 0.5rem 0; }
+    .priority-list li {
+      padding: 0.3rem 0;
       font-size: 0.875rem;
-    }
-
-    /* Priority Badges */
-    .priority-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-      padding: 0.25rem 0.5rem;
-      border-radius: 0.375rem;
-      font-size: 0.75rem;
-      font-weight: 600;
-      margin-left: 0.5rem;
-      color: white;
-    }
-
-    .priority-urgent {
-      background: #ef4444;
-    }
-
-    .priority-high {
-      background: #f59e0b;
-    }
-
-    .priority-medium {
-      background: #eab308;
-    }
-
-    .priority-low {
-      background: #10b981;
-    }
-
-    .priority-parked {
-      background: #6b7280;
-    }
-
-    /* Quick Actions */
-    .quick-actions {
       display: flex;
+      align-items: baseline;
       gap: 0.5rem;
-      margin-top: 0.75rem;
-      padding-top: 0.75rem;
+    }
+
+    .urgency-high { color: var(--error); font-weight: 700; }
+    .urgency-medium { color: var(--warning); font-weight: 600; }
+    .urgency-low { color: var(--success); }
+
+    .track-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      padding-top: 0.5rem;
       border-top: 1px solid var(--border);
     }
 
-    .quick-actions button {
-      font-size: 0.75rem;
-      padding: 0.375rem 0.75rem;
-      min-height: auto;
-      background: var(--bg-secondary);
-      color: var(--text);
-      border: 1px solid var(--border);
+    .blocker {
+      background: #fef2f2;
+      border-left: 3px solid var(--error);
+      padding: 0.5rem 0.75rem;
+      font-size: 0.85rem;
+      border-radius: 0 0.25rem 0.25rem 0;
+      margin-top: 0.5rem;
     }
 
-    .quick-actions button:hover {
+    .section-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 1.5rem 0 0.75rem;
+    }
+
+    .cross-priority {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+      padding: 0.75rem;
       background: var(--bg);
-      border-color: var(--primary);
-    }
-
-    .quick-actions select {
-      font-size: 0.75rem;
-      padding: 0.375rem 0.5rem;
       border: 1px solid var(--border);
-      border-radius: 0.375rem;
+      border-radius: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .cross-priority .rank {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--primary);
+      min-width: 1.5rem;
+    }
+
+    .cross-priority .action { font-size: 0.9rem; flex: 1; }
+    .cross-priority .track-tag {
+      font-size: 0.7rem;
+      background: var(--bg-tertiary);
+      padding: 0.15rem 0.5rem;
+      border-radius: 0.25rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .connection-item, .stalling-item {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.875rem;
+      border-left: 3px solid var(--primary-light);
+      margin-bottom: 0.5rem;
       background: var(--bg);
-      cursor: pointer;
+      border-radius: 0 0.25rem 0.25rem 0;
     }
 
-    .conversation-item.archived {
-      opacity: 0.6;
-      border-left: 3px solid #6b7280;
-    }
+    .stalling-item { border-left-color: var(--warning); background: #fffbeb; }
 
-    /* Export Management */
-    .export-list {
+    /* Chat */
+    .chat-container {
       display: flex;
       flex-direction: column;
-      gap: 1rem;
+      height: calc(100vh - 180px);
+      min-height: 400px;
     }
 
-    .export-item {
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem 0;
+    }
+
+    .chat-message {
+      margin-bottom: 1rem;
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .chat-message.user { justify-content: flex-end; }
+    .chat-message.user .msg-bubble {
+      background: var(--primary);
+      color: white;
+      border-radius: var(--radius) var(--radius) 0.25rem var(--radius);
+      max-width: 80%;
+    }
+
+    .chat-message.assistant .msg-bubble {
       background: var(--bg);
       border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      padding: 1rem;
+      border-radius: var(--radius) var(--radius) var(--radius) 0.25rem;
+      max-width: 85%;
+    }
+
+    .msg-bubble {
+      padding: 0.75rem 1rem;
+      font-size: 0.9rem;
+      line-height: 1.6;
+      box-shadow: var(--shadow);
+    }
+
+    .msg-bubble p { margin-bottom: 0.5rem; }
+    .msg-bubble p:last-child { margin-bottom: 0; }
+    .msg-bubble code {
+      background: rgba(0,0,0,0.06);
+      padding: 0.15rem 0.3rem;
+      border-radius: 0.25rem;
+      font-size: 0.85em;
+    }
+    .msg-bubble strong { font-weight: 600; }
+    .msg-bubble ul, .msg-bubble ol { margin-left: 1.25rem; margin-bottom: 0.5rem; }
+
+    .chat-input-area {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 1rem;
+      gap: 0.5rem;
+      padding: 0.75rem 0;
+      border-top: 1px solid var(--border);
     }
 
-    .export-info {
+    .chat-input-area textarea {
       flex: 1;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 0.625rem 0.75rem;
+      font-size: 0.9rem;
+      font-family: inherit;
+      resize: none;
+      line-height: 1.5;
+      min-height: 42px;
+      max-height: 120px;
     }
 
-    .export-name {
-      font-weight: 600;
-      margin-bottom: 0.25rem;
+    .chat-input-area textarea:focus { outline: none; border-color: var(--primary); }
+    .chat-input-area button { align-self: flex-end; }
+
+    .chat-empty {
+      text-align: center;
+      color: var(--text-secondary);
+      padding: 3rem 1rem;
     }
 
-    .export-meta {
-      font-size: 0.875rem;
+    .chat-empty h3 { margin-bottom: 0.5rem; color: var(--text); }
+    .chat-suggestions { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; margin-top: 1rem; }
+    .chat-suggestion {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 0.4rem 0.75rem;
+      border-radius: 1rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s;
       color: var(--text-secondary);
     }
+    .chat-suggestion:hover { border-color: var(--primary); color: var(--primary); }
 
-    .export-status {
-      padding: 0.25rem 0.75rem;
-      border-radius: 0.375rem;
-      font-size: 0.75rem;
-      font-weight: 600;
+    .typing-indicator {
+      display: inline-flex;
+      gap: 4px;
+      padding: 0.75rem 1rem;
     }
 
-    .export-status.pending {
-      background: #fef3c7;
-      color: #92400e;
+    .typing-indicator span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      animation: typing 1.4s infinite;
     }
 
-    .export-status.processing {
-      background: #dbeafe;
-      color: #1e40af;
+    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes typing {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-4px); }
     }
 
-    .export-status.completed {
-      background: #d1fae5;
-      color: #065f46;
-    }
-
-    .export-status.error {
-      background: #fee2e2;
-      color: #991b1b;
-    }
-
+    /* Exports */
     .queue-summary {
-      background: var(--bg-secondary);
-      border-radius: 0.5rem;
-      padding: 1rem;
-      margin-bottom: 1.5rem;
       display: flex;
-      gap: 2rem;
-      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1rem;
     }
 
     .queue-stat {
-      display: flex;
-      flex-direction: column;
-      gap: 0.25rem;
-    }
-
-    .queue-stat-value {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: var(--primary);
-    }
-
-    .queue-stat-label {
-      font-size: 0.875rem;
-      color: var(--text-secondary);
-    }
-
-    .conversation-date {
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-    }
-
-    .conversation-summary {
-      font-size: 0.875rem;
-      color: var(--text-secondary);
-      margin-bottom: 0.75rem;
-    }
-
-    .progress-bar {
-      height: 8px;
-      background: var(--border);
-      border-radius: 4px;
-      overflow: hidden;
-      margin-bottom: 0.5rem;
-    }
-
-    .progress-fill {
-      height: 100%;
-      background: var(--primary);
-      transition: width 0.3s;
-    }
-
-    .progress-text {
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-    }
-
-    .next-steps {
-      margin-top: 0.75rem;
+      flex: 1;
+      text-align: center;
       padding: 0.75rem;
       background: var(--bg);
-      border-radius: 0.375rem;
-      font-size: 0.875rem;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
     }
 
-    .next-steps h4 {
-      font-weight: 600;
-      margin-bottom: 0.5rem;
-      font-size: 0.875rem;
-    }
+    .queue-stat-value { font-size: 1.5rem; font-weight: 700; color: var(--primary); }
+    .queue-stat-label { font-size: 0.75rem; color: var(--text-secondary); }
 
-    .next-steps ul {
-      list-style: none;
-      padding-left: 0;
-    }
-
-    .next-steps li {
-      padding: 0.25rem 0;
-      padding-left: 1.25rem;
-      position: relative;
-    }
-
-    .next-steps li:before {
-      content: "→";
-      position: absolute;
-      left: 0;
-      color: var(--primary);
-    }
-
-    .review-date {
-      display: inline-block;
-      font-size: 0.75rem;
-      padding: 0.25rem 0.5rem;
-      border-radius: 0.25rem;
-      background: var(--bg-secondary);
-      color: var(--text-secondary);
-      margin-top: 0.5rem;
-    }
-
-    .review-date.overdue {
-      background: var(--error);
-      color: white;
-    }
-
-    .complete-btn {
-      margin-top: 0.5rem;
-      padding: 0.5rem 1rem;
-      background: var(--success);
-      color: white;
-      border: none;
-      border-radius: 0.375rem;
-      cursor: pointer;
-      font-size: 0.875rem;
-      min-height: 36px;
-    }
-
-    .complete-btn:hover {
-      background: #059669;
-    }
-
-    .conversation-item.completed {
-      opacity: 0.5;
-      border-left: 3px solid var(--success);
-    }
-
-    .show-completed-toggle {
-      margin: 1rem 0;
+    .export-item {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      font-size: 0.875rem;
-    }
-
-    .show-completed-toggle input {
-      width: 18px;
-      height: 18px;
-      cursor: pointer;
-    }
-
-    /* Empty State */
-    .empty-state {
-      text-align: center;
-      padding: 3rem;
-      color: var(--text-secondary);
-    }
-
-    .empty-state h2 {
-      font-size: 1.5rem;
-      margin-bottom: 0.5rem;
-      color: var(--text);
-    }
-
-    /* Status Message */
-    .status-message {
-      position: fixed;
-      bottom: 2rem;
-      right: 2rem;
-      background: var(--primary);
-      color: white;
-      padding: 1rem 1.5rem;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
       border-radius: 0.5rem;
-      box-shadow: var(--shadow-lg);
-      z-index: 1000;
-      animation: slideIn 0.3s ease-out;
+      margin-bottom: 0.5rem;
     }
 
-    .status-message.error {
-      background: var(--error);
+    .export-name { font-weight: 600; font-size: 0.9rem; }
+    .export-meta { font-size: 0.75rem; color: var(--text-secondary); }
+
+    .export-status {
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.25rem;
     }
 
-    @keyframes slideIn {
-      from {
-        transform: translateY(100%);
-        opacity: 0;
-      }
-      to {
-        transform: translateY(0);
-        opacity: 1;
-      }
-    }
+    .export-status.pending { background: #fef3c7; color: #92400e; }
+    .export-status.completed { background: #dcfce7; color: #166534; }
+    .export-status.failed { background: #fee2e2; color: #991b1b; }
 
     /* Settings Panel */
     .settings-panel {
       position: fixed;
       top: 0;
-      right: 0;
-      bottom: 0;
-      width: 100%;
-      max-width: 400px;
+      right: -400px;
+      width: 380px;
+      max-width: 90vw;
+      height: 100vh;
       background: var(--bg);
-      box-shadow: -4px 0 20px rgba(0, 0, 0, 0.1);
-      transform: translateX(100%);
-      transition: transform 0.3s;
+      box-shadow: var(--shadow-lg);
       z-index: 200;
+      transition: right 0.3s ease;
       overflow-y: auto;
     }
 
-    .settings-panel.open {
-      transform: translateX(0);
-    }
+    .settings-panel.open { right: 0; }
 
     .settings-header {
-      padding: 1.5rem;
-      border-bottom: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
       align-items: center;
+      padding: 1rem;
+      border-bottom: 1px solid var(--border);
     }
 
-    .settings-content {
-      padding: 1.5rem;
-    }
+    .settings-content { padding: 1rem; }
 
     .settings-group {
-      margin-bottom: 1.5rem;
+      margin-bottom: 1rem;
     }
 
     .settings-group label {
       display: block;
       font-weight: 600;
-      margin-bottom: 0.5rem;
+      font-size: 0.85rem;
+      margin-bottom: 0.25rem;
     }
 
     .settings-group input {
       width: 100%;
-      padding: 0.75rem;
+      padding: 0.5rem;
       border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      font-size: 0.875rem;
+      border-radius: 0.375rem;
+      font-size: 0.85rem;
     }
 
     .settings-group small {
       display: block;
-      color: var(--text-secondary);
-      margin-top: 0.25rem;
+      color: var(--text-muted);
       font-size: 0.75rem;
+      margin-top: 0.25rem;
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--text-secondary);
+    }
+
+    .empty-state h2 { color: var(--text); margin-bottom: 0.5rem; }
+
+    /* Toast messages */
+    .status-message {
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 0.75rem 1.25rem;
+      background: var(--text);
+      color: white;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      z-index: 300;
+      animation: fadeIn 0.3s;
+      box-shadow: var(--shadow-lg);
+    }
+
+    .status-message.error { background: var(--error); }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } }
+
+    @media (max-width: 640px) {
+      .tab { padding: 0.5rem 0.75rem; font-size: 0.85rem; }
+      .hero { padding: 1.25rem; }
+      .track-card { padding: 1rem; }
+      .header h1 { font-size: 1.1rem; }
     }
   </style>
 </head>
 <body>
-  <!-- Header -->
+
   <header class="header">
     <div class="header-content">
-      <h1>🧠 Claude Progress Tracker</h1>
+      <h1>Knowledge Assistant</h1>
       <div class="header-actions">
-        <div class="auth-container" id="authContainer">
-          <button id="signInBtn" style="display: none;">Sign in with Google</button>
-          <div id="userProfile" class="user-profile" style="display: none;">
-            <img id="userAvatar" class="user-avatar" src="" alt="User">
-            <div>
-              <div id="userName" style="font-size: 0.875rem; font-weight: 600;"></div>
-              <div id="userEmail" class="user-email"></div>
-            </div>
-          </div>
-          <span class="sync-status" id="syncStatus" style="display: none;">
-            <span id="syncText">Synced</span>
-          </span>
+        <div id="userProfile" class="user-profile" style="display: none;">
+          <img id="userAvatar" class="user-avatar" src="" alt="">
+          <span id="userEmail"></span>
         </div>
-        <span class="last-sync" id="lastSync">Never synced</span>
-        <button id="refreshBtn" title="Refresh data">🔄 Refresh</button>
-        <button class="secondary" id="settingsBtn" title="Settings">⚙️</button>
+        <button id="signInBtn" style="display: none;">Sign in with Google</button>
+        <button class="secondary small" id="refreshBtn" title="Refresh">Refresh</button>
+        <button class="secondary small" id="settingsBtn" title="Settings">Settings</button>
       </div>
     </div>
   </header>
 
-  <!-- Main Content -->
   <main class="container">
-    <div id="loading" class="loading">
+    <div id="loading" class="empty-state">
       <div class="spinner"></div>
-      <p>Loading your projects...</p>
+      <p style="margin-top: 1rem;">Loading...</p>
     </div>
 
-    <!-- Tabs (shown when signed in) -->
+    <div id="signInPrompt" class="empty-state" style="display: none;">
+      <h2>Sign in to get started</h2>
+      <p>Sign in with Google to access your knowledge base from Drive.</p>
+    </div>
+
     <div id="tabs-container" style="display: none;">
       <div class="tabs">
-        <button class="tab active" data-tab="conversations">📊 My Conversations</button>
-        <button class="tab" data-tab="exports">📦 Process Exports</button>
-      </div>
-    </div>
-
-    <!-- Tab 1: Conversations -->
-    <div id="tab-conversations" class="tab-content active" style="display: none;">
-      <div id="content" style="display: none;">
-        <div class="filters">
-        <div class="filter-group">
-          <label for="projectFilter">Project:</label>
-          <select id="projectFilter">
-            <option value="all">All Projects</option>
-          </select>
-        </div>
-        <div class="filter-group">
-          <label for="priorityFilter">Priority:</label>
-          <select id="priorityFilter">
-            <option value="all">All Priorities</option>
-            <option value="urgent">🔴 Urgent</option>
-            <option value="high">🟠 High</option>
-            <option value="medium">🟡 Medium</option>
-            <option value="low">🟢 Low</option>
-            <option value="parked">⏸️ Parked</option>
-          </select>
-        </div>
-        <div class="filter-group">
-          <label for="sortBy">Sort:</label>
-          <select id="sortBy">
-            <option value="smart">Smart (New + Priority)</option>
-            <option value="date">Last Updated</option>
-            <option value="priority">Priority</option>
-            <option value="progress">Progress %</option>
-          </select>
-        </div>
-        <div class="filter-group" style="flex: 1; min-width: 200px;">
-          <label for="searchBox">Search:</label>
-          <input type="text" id="searchBox" placeholder="Search conversations..." style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-secondary); color: var(--text);">
-        </div>
-        <div class="show-completed-toggle">
-          <input type="checkbox" id="showCompleted" checked>
-          <label for="showCompleted">Show completed</label>
-        </div>
-        <div class="show-completed-toggle">
-          <input type="checkbox" id="hideEmpty" checked>
-          <label for="hideEmpty">Hide 0% progress</label>
-        </div>
-        <div class="show-completed-toggle">
-          <input type="checkbox" id="showArchived">
-          <label for="showArchived">Show archived</label>
-        </div>
-        </div>
-        <div id="conversationsList" class="conversations-list"></div>
+        <button class="tab active" data-tab="brief">Focus Brief</button>
+        <button class="tab" data-tab="chat">Chat</button>
+        <button class="tab" data-tab="exports">Exports</button>
       </div>
 
-      <!-- Empty state for conversations tab -->
-      <div id="emptyState" class="empty-state" style="display: none;"></div>
-    </div>
+      <!-- Tab 1: Focus Brief -->
+      <div id="tab-brief" class="tab-content active">
+        <div id="briefContent"></div>
+        <div id="briefEmpty" class="empty-state" style="display: none;">
+          <h2>No data yet</h2>
+          <p>Upload a Claude export ZIP in the Exports tab, then trigger processing in GitHub Actions.</p>
+        </div>
+      </div>
 
-    <!-- Tab 2: Exports -->
+      <!-- Tab 2: Chat -->
+      <div id="tab-chat" class="tab-content">
+        <div class="chat-container">
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-empty" id="chatEmpty">
+              <h3>Ask anything about your projects</h3>
+              <p>I have full context from your Claude.ai conversation history.</p>
+              <div class="chat-suggestions" id="chatSuggestions">
+                <span class="chat-suggestion" data-q="What should I focus on this week?">What should I focus on this week?</span>
+                <span class="chat-suggestion" data-q="What decisions have I made recently?">What decisions have I made recently?</span>
+                <span class="chat-suggestion" data-q="What's blocking my progress?">What's blocking my progress?</span>
+                <span class="chat-suggestion" data-q="Give me a status update across all tracks">Status update across all tracks</span>
+              </div>
+              <div id="chatNeedsApiKey" style="display: none; margin-top: 1.5rem;">
+                <p style="color: var(--warning);">Add your Anthropic API Key in Settings to enable chat.</p>
+              </div>
+            </div>
+          </div>
+          <div class="chat-input-area">
+            <textarea id="chatInput" placeholder="Ask about your projects..." rows="1"></textarea>
+            <button id="chatSend">Send</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Exports -->
       <div id="tab-exports" class="tab-content">
         <div class="queue-summary">
           <div class="queue-stat">
@@ -830,26 +607,14 @@
             <div class="queue-stat-label">Pending</div>
           </div>
           <div class="queue-stat">
-            <div class="queue-stat-value" id="queueProcessing">0</div>
-            <div class="queue-stat-label">Processing</div>
-          </div>
-          <div class="queue-stat">
             <div class="queue-stat-value" id="queueCompleted">0</div>
             <div class="queue-stat-label">Completed</div>
           </div>
         </div>
-
-        <h3 style="margin-bottom: 1rem;">Available Export Files</h3>
-        <div id="exportsList" class="export-list">
+        <div id="exportsList">
           <p style="color: var(--text-secondary); text-align: center; padding: 2rem;">Loading exports...</p>
         </div>
-    </div>
-
-    <!-- Sign in prompt (shown when not authenticated) -->
-    <div id="signInPrompt" class="empty-state" style="display: none;">
-      <h2>🔒 Sign In Required</h2>
-      <p>Sign in with Google to access your private progress tracker data.</p>
-      <p style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-secondary);">Your conversations and progress are stored privately in Google Drive.</p>
+      </div>
     </div>
   </main>
 
@@ -857,208 +622,117 @@
   <div id="settingsPanel" class="settings-panel">
     <div class="settings-header">
       <h2>Settings</h2>
-      <button class="secondary" id="closeSettings">✕</button>
+      <button class="secondary small" id="closeSettings">X</button>
     </div>
     <div class="settings-content">
       <div class="settings-group">
         <label for="oauthClientId">Google OAuth Client ID</label>
         <input type="text" id="oauthClientId" placeholder="Enter OAuth 2.0 Client ID">
-        <small>Get this from Google Cloud Console → APIs & Services → Credentials</small>
+        <small>From Google Cloud Console Credentials</small>
       </div>
       <div class="settings-group">
         <label for="driveFolderId">Google Drive Folder ID</label>
-        <input type="text" id="driveFolderId" placeholder="Enter folder ID for user data">
-        <small>Shared folder where your projects-{email}.json is stored (privacy-protected per user)</small>
+        <input type="text" id="driveFolderId" placeholder="Enter folder ID">
+        <small>Shared Drive folder with your knowledge base</small>
       </div>
       <div class="settings-group">
-        <label for="driveFileId">Projects File ID (Optional)</label>
-        <input type="text" id="driveFileId" placeholder="Enter Google Drive file ID">
-        <small>Direct link to your projects-{email}.json file (fallback if not using folder)</small>
+        <label for="anthropicApiKey">Anthropic API Key</label>
+        <input type="password" id="anthropicApiKey" placeholder="sk-ant-...">
+        <small>Required for Chat tab. Stored locally only, never sent to any server except Anthropic.</small>
       </div>
       <button id="saveSettings">Save Settings</button>
-      <button class="secondary" id="signOutBtn" style="margin-top: 1rem; display: none;">Sign Out</button>
-      <button class="secondary" id="clearCache" style="margin-top: 1rem;">Clear Cache</button>
+      <button class="secondary" id="signOutBtn" style="margin-top: 0.75rem; display: none;">Sign Out</button>
+      <button class="secondary" id="clearCache" style="margin-top: 0.5rem;">Clear Cache</button>
     </div>
   </div>
 
   <script>
-    // Service Worker Registration
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('service-worker.js')
-        .then(() => console.log('Service Worker registered'))
-        .catch(err => console.error('Service Worker registration failed:', err));
+      navigator.serviceWorker.register('service-worker.js').catch(() => {});
     }
 
-    // App State
     const state = {
-      projects: [],
-      lastSync: null,
-      fileId: localStorage.getItem('driveFileId') || '',
       oauthClientId: localStorage.getItem('oauthClientId') || '',
       driveFolderId: localStorage.getItem('driveFolderId') || '',
+      anthropicApiKey: localStorage.getItem('anthropicApiKey') || '',
       accessToken: null,
       userInfo: null,
-      userData: JSON.parse(localStorage.getItem('userData') || '{}'),
-      completedConversations: JSON.parse(localStorage.getItem('completedConversations') || '{}'),
-      showCompleted: localStorage.getItem('showCompleted') !== 'false',
-      hideEmpty: localStorage.getItem('hideEmpty') !== 'false',
-      showArchived: localStorage.getItem('showArchived') === 'true',
-      selectedProject: 'all',
-      selectedPriority: 'all',
-      sortBy: localStorage.getItem('sortBy') || 'smart',
-      searchQuery: '',
+      digest: null,
+      digestCachedAt: null,
+      synthesis: null,
+      synthesisCachedAt: null,
       queue: { queue: [] },
+      chatHistory: [],
     };
 
-    // DOM Elements
-    const loadingEl = document.getElementById('loading');
-    const tabsContainerEl = document.getElementById('tabs-container');
-    const tabConversationsEl = document.getElementById('tab-conversations');
-    const tabExportsEl = document.getElementById('tab-exports');
-    const contentEl = document.getElementById('content');
-    const emptyStateEl = document.getElementById('emptyState');
-    const signInPromptEl = document.getElementById('signInPrompt');
-    const conversationsListEl = document.getElementById('conversationsList');
-    const projectFilterEl = document.getElementById('projectFilter');
-    const priorityFilterEl = document.getElementById('priorityFilter');
-    const sortByEl = document.getElementById('sortBy');
-    const searchBoxEl = document.getElementById('searchBox');
-    const lastSyncEl = document.getElementById('lastSync');
-    const settingsPanelEl = document.getElementById('settingsPanel');
-    const driveFileIdInput = document.getElementById('driveFileId');
-    const oauthClientIdInput = document.getElementById('oauthClientId');
-    const driveFolderIdInput = document.getElementById('driveFolderId');
-    const signInBtn = document.getElementById('signInBtn');
-    const signOutBtn = document.getElementById('signOutBtn');
-    const userProfile = document.getElementById('userProfile');
-    const syncStatus = document.getElementById('syncStatus');
+    const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
-    // Load config from config.json
-    async function loadConfig() {
-      // Config.json is NOT used for security reasons (exposes OAuth client ID publicly)
-      // Users MUST configure OAuth Client ID and Drive Folder ID in Settings panel
-      console.log('Using OAuth and Drive settings from localStorage only');
+    // ============================================
+    // INIT
+    // ============================================
 
-      // Check if critical values are missing
-      if (!state.oauthClientId || !state.driveFolderId) {
-        console.log('Missing OAuth configuration - prompting user to configure');
-        showMessage('⚙️ Please configure OAuth settings first - opening Settings...', true);
-
-        // Auto-open settings panel after brief delay
-        setTimeout(() => {
-          settingsPanelEl.classList.add('open');
-          // Focus first empty field
-          if (!state.oauthClientId) {
-            document.getElementById('oauthClientId').focus();
-          }
-        }, 1500);
-      }
-    }
-
-    // Initialize
     async function init() {
-      // Load config first
-      await loadConfig();
-
-      // Update UI with current values
-      driveFileIdInput.value = state.fileId;
-      oauthClientIdInput.value = state.oauthClientId;
-      driveFolderIdInput.value = state.driveFolderId;
-      document.getElementById('showCompleted').checked = state.showCompleted;
-      document.getElementById('hideEmpty').checked = state.hideEmpty;
-      document.getElementById('showArchived').checked = state.showArchived;
-      sortByEl.value = state.sortBy;
-
-      // Initialize Google API
-      await initGoogleAuth();
-
-      // Load projects
-      await loadProjects();
-    }
-
-    // ============================================
-    // GOOGLE OAUTH & DRIVE API (Redirect-based)
-    // ============================================
-
-    // Parse OAuth token from URL hash (after redirect back from Google)
-    function parseOAuthToken() {
-      const hash = window.location.hash.substring(1);
-      if (!hash) return null;
-
-      const params = {};
-      hash.split('&').forEach(param => {
-        const [key, value] = param.split('=');
-        params[decodeURIComponent(key)] = decodeURIComponent(value);
-      });
-
-      if (params.access_token) {
-        console.log('OAuth token found in URL');
-        // Clear the hash from URL
-        window.history.replaceState(null, null, window.location.pathname + window.location.search);
-        return params;
-      }
-
-      return null;
-    }
-
-    // Initialize Google OAuth (Redirect-based)
-    async function initGoogleAuth() {
-      if (!state.oauthClientId) {
-        console.log('No OAuth Client ID configured');
-        signInBtn.style.display = 'block';
-        signInBtn.disabled = true;
-        signInBtn.textContent = 'Configure OAuth in Settings';
+      if (!state.oauthClientId || !state.driveFolderId) {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('signInPrompt').style.display = 'block';
+        document.getElementById('signInPrompt').innerHTML = '<h2>Configure Settings</h2><p>Open Settings to add your OAuth Client ID and Drive Folder ID.</p>';
+        setTimeout(() => document.getElementById('settingsPanel').classList.add('open'), 500);
         return;
       }
 
-      // Check if we're returning from OAuth redirect
+      document.getElementById('oauthClientId').value = state.oauthClientId;
+      document.getElementById('driveFolderId').value = state.driveFolderId;
+      document.getElementById('anthropicApiKey').value = state.anthropicApiKey;
+
+      await initGoogleAuth();
+    }
+
+    // ============================================
+    // GOOGLE OAUTH (redirect-based)
+    // ============================================
+
+    function parseOAuthToken() {
+      const hash = window.location.hash.substring(1);
+      if (!hash) return null;
+      const params = {};
+      hash.split('&').forEach(p => {
+        const [k, v] = p.split('=');
+        params[decodeURIComponent(k)] = decodeURIComponent(v);
+      });
+      if (params.access_token) {
+        window.history.replaceState(null, null, window.location.pathname + window.location.search);
+        return params;
+      }
+      return null;
+    }
+
+    async function initGoogleAuth() {
+      if (!state.oauthClientId) {
+        document.getElementById('signInBtn').style.display = 'block';
+        document.getElementById('signInBtn').disabled = true;
+        document.getElementById('signInBtn').textContent = 'Configure OAuth in Settings';
+        return;
+      }
+
       const oauthParams = parseOAuthToken();
       if (oauthParams) {
         await handleOAuthCallback(oauthParams);
         return;
       }
 
-      // Wait for Google Drive API to load
-      await new Promise(resolve => {
-        const checkGapi = setInterval(() => {
-          if (window.gapi) {
-            clearInterval(checkGapi);
-            resolve();
-          }
-        }, 100);
-      });
+      await loadGapi();
 
-      // Load Drive API
-      await new Promise((resolve, reject) => {
-        gapi.load('client', async () => {
-          try {
-            await gapi.client.init({
-              discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-            });
-            console.log('Drive API loaded');
-            resolve();
-          } catch (error) {
-            console.error('Failed to load Drive API:', error);
-            reject(error);
-          }
-        });
-      });
-
-      // Check if we have a stored token
       const storedToken = localStorage.getItem('accessToken');
       const tokenExpiry = localStorage.getItem('tokenExpiry');
 
       if (storedToken && tokenExpiry && Date.now() < parseInt(tokenExpiry)) {
         state.accessToken = storedToken;
-        gapi.client.setToken({ access_token: state.accessToken });
-
-        // Verify token is still valid
-        const userInfoValid = await loadUserInfo();
-        if (userInfoValid) {
+        gapi.client.setToken({ access_token: storedToken });
+        const valid = await loadUserInfo();
+        if (valid) {
           updateAuthUI(true);
-          await loadUserDataFromDrive();
+          await loadDigest();
         } else {
-          // Token invalid, clear it
           localStorage.removeItem('accessToken');
           localStorage.removeItem('tokenExpiry');
           updateAuthUI(false);
@@ -1070,906 +744,518 @@
       }
     }
 
-    // Handle OAuth callback after redirect
-    async function handleOAuthCallback(params) {
-      if (params.error) {
-        console.error('OAuth error:', params.error);
-        showMessage('Sign in failed: ' + params.error, true);
-        updateAuthUI(false);
-        return;
-      }
-
-      const accessToken = params.access_token;
-      const expiresIn = parseInt(params.expires_in) || 3600;
-
-      state.accessToken = accessToken;
-      localStorage.setItem('accessToken', accessToken);
-      localStorage.setItem('tokenExpiry', (Date.now() + (expiresIn * 1000)).toString());
-
-      // Wait for Drive API to load
+    async function loadGapi() {
       await new Promise(resolve => {
-        const checkGapi = setInterval(() => {
-          if (window.gapi) {
-            clearInterval(checkGapi);
-            resolve();
-          }
-        }, 100);
+        const check = setInterval(() => { if (window.gapi) { clearInterval(check); resolve(); } }, 100);
       });
-
       await new Promise((resolve, reject) => {
         gapi.load('client', async () => {
           try {
-            await gapi.client.init({
-              discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-            });
-            gapi.client.setToken({ access_token: accessToken });
+            await gapi.client.init({ discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
             resolve();
-          } catch (error) {
-            reject(error);
-          }
+          } catch (e) { reject(e); }
         });
       });
+    }
 
+    async function handleOAuthCallback(params) {
+      if (params.error) { showMessage('Sign in failed: ' + params.error, 'error'); return; }
+
+      state.accessToken = params.access_token;
+      const expiresIn = parseInt(params.expires_in) || 3600;
+      localStorage.setItem('accessToken', params.access_token);
+      localStorage.setItem('tokenExpiry', (Date.now() + expiresIn * 1000).toString());
+
+      await loadGapi();
+      gapi.client.setToken({ access_token: params.access_token });
       await loadUserInfo();
       updateAuthUI(true);
-      await loadUserDataFromDrive();
-      await loadProjects();
+      await loadDigest();
       showMessage('Signed in successfully!');
     }
 
-    // Sign in handler (redirect to Google OAuth)
     function handleSignIn() {
       if (!state.oauthClientId) {
-        showMessage('Please configure OAuth Client ID in Settings', true);
-        settingsPanelEl.classList.add('open');
+        showMessage('Configure OAuth Client ID in Settings', 'error');
+        document.getElementById('settingsPanel').classList.add('open');
         return;
       }
-
-      // Build OAuth URL
-      const redirectUri = window.location.origin + window.location.pathname;
+      const redirect = window.location.origin + window.location.pathname;
       const scope = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
-
-      const oauthUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+      window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
         client_id: state.oauthClientId,
-        redirect_uri: redirectUri,
+        redirect_uri: redirect,
         response_type: 'token',
-        scope: scope,
+        scope,
         include_granted_scopes: 'true',
-        state: 'pass-through-value'
       }).toString();
-
-      console.log('Redirecting to OAuth:', oauthUrl);
-
-      // Redirect to Google OAuth
-      window.location.href = oauthUrl;
     }
 
-    // Load user info (returns true if successful, false if token invalid)
     async function loadUserInfo() {
       try {
-        const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
           headers: { Authorization: `Bearer ${state.accessToken}` }
         });
-
-        if (response.status === 401) {
-          // Token is invalid/expired
-          console.log('Token expired, clearing auth state');
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('tokenExpiry');
-          state.accessToken = null;
-          state.userInfo = null;
-          return false;
-        }
-
-        if (response.ok) {
-          state.userInfo = await response.json();
-          console.log('User info loaded:', state.userInfo);
-          return true;
-        }
-
-        return false;
-      } catch (error) {
-        console.error('Failed to load user info:', error);
-        return false;
-      }
+        if (!r.ok) return false;
+        state.userInfo = await r.json();
+        return true;
+      } catch { return false; }
     }
 
-    // Sign out handler
     function handleSignOut() {
       state.accessToken = null;
       state.userInfo = null;
-      state.userData = {};
+      state.digest = null;
       localStorage.removeItem('accessToken');
       localStorage.removeItem('tokenExpiry');
       gapi.client.setToken(null);
       updateAuthUI(false);
-      showMessage('Signed out successfully');
+      showMessage('Signed out');
     }
 
-    // Update auth UI
-    function updateAuthUI(isSignedIn) {
-      if (isSignedIn && state.userInfo) {
+    function updateAuthUI(signedIn) {
+      const signInBtn = document.getElementById('signInBtn');
+      const userProfile = document.getElementById('userProfile');
+      const signOutBtn = document.getElementById('signOutBtn');
+      const loading = document.getElementById('loading');
+      const signInPrompt = document.getElementById('signInPrompt');
+      const tabsContainer = document.getElementById('tabs-container');
+
+      loading.style.display = 'none';
+
+      if (signedIn && state.userInfo) {
         signInBtn.style.display = 'none';
         userProfile.style.display = 'flex';
         signOutBtn.style.display = 'block';
-        syncStatus.style.display = 'inline-flex';
+        signInPrompt.style.display = 'none';
+        tabsContainer.style.display = 'block';
 
         document.getElementById('userAvatar').src = state.userInfo.picture || '';
-        document.getElementById('userName').textContent = state.userInfo.name || '';
         document.getElementById('userEmail').textContent = state.userInfo.email || '';
+
+        if (!state.anthropicApiKey) {
+          document.getElementById('chatNeedsApiKey').style.display = 'block';
+        }
       } else {
         signInBtn.style.display = 'block';
         signInBtn.disabled = !state.oauthClientId;
         signInBtn.textContent = state.oauthClientId ? 'Sign in with Google' : 'Configure OAuth in Settings';
         userProfile.style.display = 'none';
         signOutBtn.style.display = 'none';
-        syncStatus.style.display = 'none';
-      }
-    }
-
-    // Set sync status
-    function setSyncStatus(status) {
-      const syncStatusEl = document.getElementById('syncStatus');
-      const syncTextEl = document.getElementById('syncText');
-
-      syncStatusEl.className = 'sync-status';
-
-      if (status === 'syncing') {
-        syncStatusEl.classList.add('syncing');
-        syncTextEl.textContent = 'Syncing...';
-      } else if (status === 'synced') {
-        syncStatusEl.classList.add('synced');
-        syncTextEl.textContent = '✓ Synced';
-      } else if (status === 'error') {
-        syncStatusEl.classList.add('error');
-        syncTextEl.textContent = '✗ Error';
-      }
-    }
-
-    // Load user data from Drive (email-specific)
-    async function loadUserDataFromDrive() {
-      if (!state.accessToken || !state.driveFolderId || !state.userInfo) {
-        console.log('Cannot load user data: missing token, folder ID, or user info');
-        return;
-      }
-
-      try {
-        setSyncStatus('syncing');
-
-        // Check if Drive API is ready
-        if (!gapi.client.drive) {
-          console.log('Drive API not ready yet, skipping user data load');
-          state.userData = {};
-          setSyncStatus('synced');
-          return;
-        }
-
-        // Search for user-data-{email}.json in the folder
-        const userEmail = state.userInfo.email;
-        const fileName = `user-data-${userEmail}.json`;
-        const response = await gapi.client.drive.files.list({
-          q: `name='${fileName}' and '${state.driveFolderId}' in parents and trashed=false`,
-          fields: 'files(id, name)',
-        });
-
-        if (response && response.result && response.result.files && response.result.files.length > 0) {
-          const fileId = response.result.files[0].id;
-
-          // Download file content
-          const fileResponse = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-            { headers: { Authorization: `Bearer ${state.accessToken}` } }
-          );
-
-          if (fileResponse.ok) {
-            state.userData = await fileResponse.json();
-            console.log('User data loaded from Drive:', state.userData);
-            setSyncStatus('synced');
-          }
-        } else {
-          // File doesn't exist - create it for new user
-          console.log(`user-data-${state.userInfo.email}.json not found, creating for new user`);
-          state.userData = {};
-          await saveUserDataToDrive(); // Create the file
-          setSyncStatus('synced');
-        }
-      } catch (error) {
-        console.error('Error loading user data:', error);
-        setSyncStatus('error');
-        // Don't show error message, just log it - file might not exist yet
-        state.userData = {};
-      }
-    }
-
-    // Save user data to Drive (email-specific)
-    async function saveUserDataToDrive() {
-      if (!state.accessToken || !state.driveFolderId || !state.userInfo) {
-        console.log('Cannot save user data: missing token, folder ID, or user info');
-        return false;
-      }
-
-      try {
-        setSyncStatus('syncing');
-
-        const userEmail = state.userInfo.email;
-        const fileName = `user-data-${userEmail}.json`;
-
-        const content = JSON.stringify(state.userData, null, 2);
-        const blob = new Blob([content], { type: 'application/json' });
-
-        // Check if file exists
-        const searchResponse = await gapi.client.drive.files.list({
-          q: `name='${fileName}' and '${state.driveFolderId}' in parents and trashed=false`,
-          fields: 'files(id)',
-        });
-
-        let fileId = null;
-        if (searchResponse.result.files && searchResponse.result.files.length > 0) {
-          fileId = searchResponse.result.files[0].id;
-        }
-
-        const metadata = {
-          name: fileName,
-          mimeType: 'application/json',
-        };
-
-        if (!fileId) {
-          metadata.parents = [state.driveFolderId];
-        }
-
-        const form = new FormData();
-        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-        form.append('file', blob);
-
-        const url = fileId
-          ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
-          : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-
-        const response = await fetch(url, {
-          method: fileId ? 'PATCH' : 'POST',
-          headers: { Authorization: `Bearer ${state.accessToken}` },
-          body: form,
-        });
-
-        if (response.ok) {
-          console.log('User data saved to Drive');
-          setSyncStatus('synced');
-          return true;
-        } else {
-          throw new Error('Failed to save file');
-        }
-      } catch (error) {
-        console.error('Error saving user data:', error);
-        setSyncStatus('error');
-        showMessage('Failed to save to Drive', true);
-        return false;
-      }
-    }
-
-    // Merge user data with conversations
-    function mergeUserData() {
-      if (!state.userData || Object.keys(state.userData).length === 0) {
-        return;
-      }
-
-      // Merge user data into conversations
-      for (const project of state.projects) {
-        if (project.conversations) {
-          for (const conv of project.conversations) {
-            const userData = state.userData[conv.uuid];
-            if (userData) {
-              conv.priority = userData.priority || 'medium';
-              conv.archived = userData.archived || false;
-              conv.notes = userData.notes || '';
-              conv.userCompleted = userData.completed || false;
-            }
-          }
-        }
-      }
-    }
-
-    // Update user data for a conversation
-    function updateConversationUserData(uuid, updates) {
-      if (!state.userData[uuid]) {
-        state.userData[uuid] = {};
-      }
-      Object.assign(state.userData[uuid], updates);
-
-      // Save to Drive if authenticated
-      if (state.accessToken) {
-        saveUserDataToDrive();
+        signInPrompt.style.display = 'block';
+        tabsContainer.style.display = 'none';
       }
     }
 
     // ============================================
-    // END GOOGLE OAUTH & DRIVE API
+    // DRIVE HELPERS
     // ============================================
 
-    // Toggle completed conversations visibility
-    function toggleCompleted() {
-      state.showCompleted = document.getElementById('showCompleted').checked;
-      localStorage.setItem('showCompleted', state.showCompleted);
-      renderConversations();
+    async function driveDownloadJSON(folderId, fileName) {
+      const resp = await gapi.client.drive.files.list({
+        q: `name='${fileName}' and '${folderId}' in parents and trashed=false`,
+        fields: 'files(id)',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+      const files = resp.result.files || [];
+      if (files.length === 0) return null;
+      const r = await fetch(`https://www.googleapis.com/drive/v3/files/${files[0].id}?alt=media&supportsAllDrives=true`, {
+        headers: { Authorization: `Bearer ${state.accessToken}` }
+      });
+      if (!r.ok) return null;
+      return r.json();
     }
 
-    // Toggle empty conversations visibility
-    function toggleEmpty() {
-      state.hideEmpty = document.getElementById('hideEmpty').checked;
-      localStorage.setItem('hideEmpty', state.hideEmpty);
-      renderConversations();
+    async function driveDownloadText(folderId, fileName) {
+      const resp = await gapi.client.drive.files.list({
+        q: `name='${fileName}' and '${folderId}' in parents and trashed=false`,
+        fields: 'files(id)',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+      const files = resp.result.files || [];
+      if (files.length === 0) return null;
+      const r = await fetch(`https://www.googleapis.com/drive/v3/files/${files[0].id}?alt=media&supportsAllDrives=true`, {
+        headers: { Authorization: `Bearer ${state.accessToken}` }
+      });
+      if (!r.ok) return null;
+      return r.text();
     }
 
-    // Mark conversation as complete
-    function markComplete(conversationUuid) {
-      // Update local state (for backward compatibility)
-      state.completedConversations[conversationUuid] = true;
-      localStorage.setItem('completedConversations', JSON.stringify(state.completedConversations));
-
-      // Update user data in Drive
-      updateConversationUserData(conversationUuid, { completed: true });
-
-      renderConversations();
-      showMessage('Marked as complete!');
+    async function driveFindFolder(parentId, folderName) {
+      const resp = await gapi.client.drive.files.list({
+        q: `name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+        fields: 'files(id)',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+      const files = resp.result.files || [];
+      return files.length > 0 ? files[0].id : null;
     }
 
-    // Check if conversation is marked complete
-    function isComplete(conversationUuid) {
-      // Check Drive data first, fallback to local
-      if (state.userData[conversationUuid]?.completed) {
-        return true;
+    async function driveUploadJSON(folderId, fileName, data) {
+      const content = JSON.stringify(data, null, 2);
+      const blob = new Blob([content], { type: 'application/json' });
+
+      const searchResp = await gapi.client.drive.files.list({
+        q: `name='${fileName}' and '${folderId}' in parents and trashed=false`,
+        fields: 'files(id)',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+
+      let fileId = null;
+      if (searchResp.result.files && searchResp.result.files.length > 0) {
+        fileId = searchResp.result.files[0].id;
       }
-      return state.completedConversations[conversationUuid] === true;
+
+      const metadata = { name: fileName, mimeType: 'application/json' };
+      if (!fileId) metadata.parents = [folderId];
+
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', blob);
+
+      const url = fileId
+        ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart&supportsAllDrives=true`
+        : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true`;
+
+      await fetch(url, {
+        method: fileId ? 'PATCH' : 'POST',
+        headers: { Authorization: `Bearer ${state.accessToken}` },
+        body: form,
+      });
     }
 
-    // Get conversation priority
-    function getPriority(conversationUuid) {
-      return state.userData[conversationUuid]?.priority || 'medium';
-    }
+    // ============================================
+    // FOCUS BRIEF
+    // ============================================
 
-    // Check if priority is confirmed
-    function isPriorityConfirmed(conversationUuid) {
-      return state.userData[conversationUuid]?.priorityConfirmed === true;
-    }
-
-    // Confirm priority
-    function confirmPriority(conversationUuid) {
-      if (!state.userData[conversationUuid]) {
-        state.userData[conversationUuid] = {};
+    async function loadDigest() {
+      if (state.digest && state.digestCachedAt && Date.now() - state.digestCachedAt < CACHE_TTL) {
+        renderBrief();
+        return;
       }
-      state.userData[conversationUuid].priorityConfirmed = true;
-      localStorage.setItem('userData', JSON.stringify(state.userData));
 
-      // Update Drive if authenticated
-      updateConversationUserData(conversationUuid, { priorityConfirmed: true });
-
-      renderConversations();
-      showMessage('Priority confirmed');
-    }
-
-    // Set conversation priority
-    function setPriority(conversationUuid, priority) {
-      if (!state.userData[conversationUuid]) {
-        state.userData[conversationUuid] = {};
-      }
-      state.userData[conversationUuid].priority = priority;
-      state.userData[conversationUuid].priorityConfirmed = true; // Auto-confirm when manually set
-      localStorage.setItem('userData', JSON.stringify(state.userData));
-
-      // Update Drive if authenticated
-      updateConversationUserData(conversationUuid, { priority, priorityConfirmed: true });
-
-      renderConversations();
-      showMessage(`Priority set to ${priority}`);
-    }
-
-    // Check if conversation is archived
-    function isArchived(conversationUuid) {
-      return state.userData[conversationUuid]?.archived === true;
-    }
-
-    // Toggle archive status
-    function toggleArchive(conversationUuid) {
-      if (!state.userData[conversationUuid]) {
-        state.userData[conversationUuid] = {};
-      }
-      const isCurrentlyArchived = isArchived(conversationUuid);
-      state.userData[conversationUuid].archived = !isCurrentlyArchived;
-      localStorage.setItem('userData', JSON.stringify(state.userData));
-
-      // Update Drive if authenticated
-      updateConversationUserData(conversationUuid, { archived: !isCurrentlyArchived });
-
-      renderConversations();
-      showMessage(isCurrentlyArchived ? 'Unarchived' : 'Archived');
-    }
-
-    // Priority sort order
-    const priorityOrder = { urgent: 0, high: 1, medium: 2, low: 3, parked: 4 };
-
-    // Load projects from Google Drive (PRIVATE - requires authentication)
-    async function loadProjects() {
       try {
-        showLoading(true);
-
-        // Require authentication
-        if (!state.accessToken || !state.driveFolderId) {
-          console.log('Cannot load projects: not authenticated or no folder ID');
-          showEmptyState();
+        const kbFolderId = await driveFindFolder(state.driveFolderId, 'knowledge-base');
+        if (!kbFolderId) {
+          document.getElementById('briefEmpty').style.display = 'block';
           return;
         }
 
-        // Check if Drive API is ready
-        if (!gapi.client.drive) {
-          console.log('Drive API not ready');
-          showEmptyState();
+        const email = state.userInfo.email;
+        const digest = await driveDownloadJSON(kbFolderId, `digest-${email}.json`);
+        if (!digest) {
+          document.getElementById('briefEmpty').style.display = 'block';
           return;
         }
 
-        // Search for projects-{email}.json in Drive folder
-        const userEmail = state.userInfo.email;
-        const projectsFileName = `projects-${userEmail}.json`;
-        console.log('Searching for', projectsFileName, 'in folder:', state.driveFolderId);
-        const searchQuery = `name='${projectsFileName}' and '${state.driveFolderId}' in parents and trashed=false`;
-        console.log('Search query:', searchQuery);
+        state.digest = digest;
+        state.digestCachedAt = Date.now();
 
-        const searchResponse = await gapi.client.drive.files.list({
-          q: searchQuery,
-          fields: 'files(id, name, modifiedTime)',
-          spaces: 'drive'
-        });
+        // Cache for offline
+        localStorage.setItem('digestCache', JSON.stringify(digest));
 
-        console.log('Search response:', searchResponse);
-
-        if (!searchResponse || !searchResponse.result) {
-          console.error('Invalid search response');
-          showMessage('Failed to search Drive', true);
-          showEmptyState();
-          return;
-        }
-
-        console.log('Files found:', searchResponse.result.files);
-
-        if (!searchResponse.result.files || searchResponse.result.files.length === 0) {
-          console.log(projectsFileName, 'not found in Drive folder - creating for new user');
-
-          // Create empty projects file for new user
-          const emptyProjects = {
-            projects: [],
-            lastUpdated: new Date().toISOString()
-          };
-
-          const fileMetadata = {
-            name: projectsFileName,
-            mimeType: 'application/json',
-            parents: [state.driveFolderId]
-          };
-
-          const fileContent = JSON.stringify(emptyProjects, null, 2);
-          const file = new Blob([fileContent], { type: 'application/json' });
-          const formData = new FormData();
-          formData.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
-          formData.append('file', file);
-
-          const createResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${state.accessToken}` },
-            body: formData
-          });
-
-          if (createResponse.ok) {
-            console.log('Created empty projects file for new user');
-            state.projects = [];
-            state.lastSync = new Date();
-            showMessage('Welcome! Your account is set up. Upload exports to get started.');
-            showEmptyState();
-          } else {
-            console.error('Failed to create projects file:', await createResponse.text());
-            showMessage('Failed to initialize your account', true);
-            showEmptyState();
-          }
-          return;
-        }
-
-        const fileId = searchResponse.result.files[0].id;
-        console.log('Found projects.json in Drive:', fileId);
-
-        // Download projects.json from Drive
-        const fileResponse = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-          { headers: { Authorization: `Bearer ${state.accessToken}` } }
-        );
-
-        if (!fileResponse.ok) {
-          throw new Error('Failed to download projects.json from Drive');
-        }
-
-        const data = await fileResponse.json();
-        state.projects = data.projects || [];
-        state.lastSync = new Date();
-
-        // Cache in localStorage
-        localStorage.setItem('projectsCache', JSON.stringify(data));
-        localStorage.setItem('lastSync', state.lastSync.toISOString());
-
-        // Merge user data from Drive
-        mergeUserData();
-
-        renderProjects();
-        updateLastSync();
-        console.log('Projects loaded from Drive:', state.projects.length);
-      } catch (error) {
-        console.error('Error loading projects:', error);
-
-        // Try to load from cache
-        const cached = localStorage.getItem('projectsCache');
+        renderBrief();
+      } catch (e) {
+        console.error('Failed to load digest:', e);
+        const cached = localStorage.getItem('digestCache');
         if (cached) {
-          const data = JSON.parse(cached);
-          state.projects = data.projects || [];
-          state.lastSync = new Date(localStorage.getItem('lastSync'));
-          mergeUserData();
-          renderProjects();
-          updateLastSync();
+          state.digest = JSON.parse(cached);
+          renderBrief();
           showMessage('Loaded from cache (offline)');
         } else {
-          showMessage('Failed to load projects from Drive', true);
-          showEmptyState();
+          document.getElementById('briefEmpty').style.display = 'block';
         }
-      } finally {
-        showLoading(false);
       }
     }
 
-    // Render projects (populate filter and render conversations)
-    function renderProjects() {
-      if (state.projects.length === 0) {
-        showEmptyState();
-        return;
-      }
+    function renderBrief() {
+      const d = state.digest;
+      if (!d) return;
 
-      loadingEl.style.display = 'none';
-      signInPromptEl.style.display = 'none';
-      tabsContainerEl.style.display = 'block';
-      tabConversationsEl.style.display = 'block';
-      contentEl.style.display = 'block';
-      emptyStateEl.style.display = 'none';
+      const el = document.getElementById('briefContent');
+      document.getElementById('briefEmpty').style.display = 'none';
 
-      // Populate project filter dropdown
-      populateProjectFilter();
+      const genDate = d.generated_at ? new Date(d.generated_at).toLocaleString() : 'Unknown';
 
-      // Render conversations
-      renderConversations();
-    }
-
-    // Populate project filter dropdown
-    function populateProjectFilter() {
-      const currentSelection = state.selectedProject;
-      projectFilterEl.innerHTML = '<option value="all">All Projects</option>';
-
-      for (const project of state.projects) {
-        const option = document.createElement('option');
-        option.value = project.id;
-        option.textContent = `${project.emoji} ${project.name}`;
-        projectFilterEl.appendChild(option);
-      }
-
-      projectFilterEl.value = currentSelection;
-    }
-
-    // Render conversations in flat timeline view
-    function renderConversations() {
-      conversationsListEl.innerHTML = '';
-
-      // Flatten all conversations from all projects
-      const allConversations = [];
-      for (const project of state.projects) {
-        if (project.conversations && project.conversations.length > 0) {
-          for (const conv of project.conversations) {
-            allConversations.push({
-              ...conv,
-              priority: getPriority(conv.uuid),
-              archived: isArchived(conv.uuid),
-              project: {
-                id: project.id,
-                name: project.name,
-                emoji: project.emoji,
-                color: project.color
-              }
-            });
-          }
-        }
-      }
-
-      // Filter conversations
-      const visibleConversations = allConversations.filter(conv => {
-        // Filter by selected project
-        if (state.selectedProject !== 'all' && conv.project.id !== state.selectedProject) {
-          return false;
-        }
-        // Filter by priority
-        if (state.selectedPriority !== 'all' && conv.priority !== state.selectedPriority) {
-          return false;
-        }
-        // Hide archived if toggled off
-        if (!state.showArchived && conv.archived) {
-          return false;
-        }
-        // Hide completed if toggled off
-        if (!state.showCompleted && isComplete(conv.uuid)) {
-          return false;
-        }
-        // Hide empty conversations (0% progress) if toggled on
-        if (state.hideEmpty && conv.progressPercent === 0) {
-          return false;
-        }
-        // Search filter
-        if (state.searchQuery) {
-          const searchIn = [
-            conv.name || '',
-            conv.topic || '',
-            conv.progressSummary || '',
-            (conv.nextSteps || []).join(' ')
-          ].join(' ').toLowerCase();
-
-          if (!searchIn.includes(state.searchQuery)) {
-            return false;
-          }
-        }
-        return true;
-      });
-
-      // Sort conversations
-      visibleConversations.sort((a, b) => {
-        if (state.sortBy === 'smart') {
-          // Smart sort: Unconfirmed priority first, then confirmed by priority
-          const aConfirmed = state.userData[a.uuid]?.priorityConfirmed === true;
-          const bConfirmed = state.userData[b.uuid]?.priorityConfirmed === true;
-
-          // Both confirmed or both unconfirmed
-          if (aConfirmed === bConfirmed) {
-            if (!aConfirmed) {
-              // Both unconfirmed - sort by last updated (newest first)
-              return new Date(b.lastUpdated) - new Date(a.lastUpdated);
-            } else {
-              // Both confirmed - sort by priority, then date
-              const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
-              if (priorityDiff !== 0) return priorityDiff;
-              return new Date(b.lastUpdated) - new Date(a.lastUpdated);
-            }
-          }
-          // Unconfirmed conversations come first
-          return aConfirmed ? 1 : -1;
-
-        } else if (state.sortBy === 'priority') {
-          const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
-          if (priorityDiff !== 0) return priorityDiff;
-          // Secondary sort by date if same priority
-          return new Date(b.lastUpdated) - new Date(a.lastUpdated);
-        } else if (state.sortBy === 'progress') {
-          return b.progressPercent - a.progressPercent;
-        } else {
-          // Sort by date (default)
-          return new Date(b.lastUpdated) - new Date(a.lastUpdated);
-        }
-      });
-
-      // Render conversations
-      if (visibleConversations.length > 0) {
-        for (const conv of visibleConversations) {
-          conversationsListEl.appendChild(createConversationItem(conv));
-        }
-      } else {
-        conversationsListEl.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 3rem;">No conversations to display</p>';
-      }
-    }
-
-    // Create conversation item
-    function createConversationItem(conv) {
-      const item = document.createElement('div');
-      item.className = 'conversation-item' +
-        (isComplete(conv.uuid) ? ' completed' : '') +
-        (conv.archived ? ' archived' : '');
-
-      const reviewDate = new Date(conv.reviewDate);
-      const isOverdue = reviewDate < new Date();
-
-      const priorityEmojis = {
-        urgent: '🔴',
-        high: '🟠',
-        medium: '🟡',
-        low: '🟢',
-        parked: '⏸️'
-      };
-
-      item.innerHTML = `
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
-          <div style="display: flex; align-items: center; gap: 0.5rem;">
-            <div class="project-badge" style="background-color: ${conv.project.color}">
-              <span class="project-badge-emoji">${conv.project.emoji}</span>
-              <span>${conv.project.name}</span>
-            </div>
-            <div class="priority-badge priority-${conv.priority}">
-              ${priorityEmojis[conv.priority]} ${conv.priority.charAt(0).toUpperCase() + conv.priority.slice(1)}
-            </div>
-            ${!isPriorityConfirmed(conv.uuid) ? '<span style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: var(--warning); color: #000; border-radius: 0.25rem; font-weight: 600;">⚠️ UNCONFIRMED</span>' : ''}
-            ${conv.archived ? '<span style="font-size: 0.75rem; color: var(--text-secondary);">📦 Archived</span>' : ''}
-          </div>
-        </div>
-        <div class="conversation-header">
-          <div>
-            <div class="conversation-topic">${conv.topic}</div>
-            <div class="conversation-date">Updated: ${new Date(conv.lastUpdated).toLocaleDateString()}</div>
-          </div>
-        </div>
-        <div class="conversation-summary">${conv.progressSummary}</div>
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: ${conv.progressPercent}%"></div>
-        </div>
-        <div class="progress-text">${conv.progressPercent}% complete</div>
-        <div class="review-date ${isOverdue ? 'overdue' : ''}">
-          Review: ${reviewDate.toLocaleDateString()}
-        </div>
-        <div class="next-steps" style="display: none;">
-          <h4>Next Steps:</h4>
-          <ul>
-            ${conv.nextSteps.map(step => `<li>${step}</li>`).join('')}
-          </ul>
-          ${!isComplete(conv.uuid) ? `<button class="complete-btn" onclick="event.stopPropagation(); markComplete('${conv.uuid}')">✓ Mark Complete</button>` : '<p style="color: var(--success); font-weight: 600; margin-top: 0.5rem;">✓ Completed</p>'}
-        </div>
-        <div class="quick-actions">
-          <select id="priority-${conv.uuid}" onchange="event.stopPropagation(); setPriority('${conv.uuid}', this.value)">
-            <option value="urgent" ${conv.priority === 'urgent' ? 'selected' : ''}>🔴 Urgent</option>
-            <option value="high" ${conv.priority === 'high' ? 'selected' : ''}>🟠 High</option>
-            <option value="medium" ${conv.priority === 'medium' ? 'selected' : ''}>🟡 Medium</option>
-            <option value="low" ${conv.priority === 'low' ? 'selected' : ''}>🟢 Low</option>
-            <option value="parked" ${conv.priority === 'parked' ? 'selected' : ''}>⏸️ Parked</option>
-          </select>
-          ${!isPriorityConfirmed(conv.uuid) ? `<button class="secondary" onclick="event.stopPropagation(); confirmPriority('${conv.uuid}')">✓ Confirm Priority</button>` : ''}
-          <button onclick="event.stopPropagation(); toggleArchive('${conv.uuid}')">
-            ${conv.archived ? '📦 Unarchive' : '📦 Archive'}
-          </button>
+      let html = `
+        <div class="hero">
+          <h2>What to Focus On</h2>
+          <p>${esc(d.focus_recommendation)}</p>
+          <div class="meta">Last updated: ${genDate}</div>
         </div>
       `;
 
-      // Toggle next steps on click
-      item.addEventListener('click', () => {
-        const nextSteps = item.querySelector('.next-steps');
-        nextSteps.style.display = nextSteps.style.display === 'none' ? 'block' : 'none';
-      });
+      // Sort tracks: blocked > stalling > active > completed
+      const statusOrder = { blocked: 0, stalling: 1, active: 2, completed: 3 };
+      const sortedTracks = [...(d.tracks || [])].sort(
+        (a, b) => (statusOrder[a.status] ?? 2) - (statusOrder[b.status] ?? 2)
+      );
 
-      return item;
-    }
-
-    // Show/hide loading
-    function showLoading(show) {
-      if (show) {
-        loadingEl.style.display = 'block';
-        signInPromptEl.style.display = 'none';
-        tabsContainerEl.style.display = 'none';
-        tabConversationsEl.style.display = 'none';
-        tabExportsEl.style.display = 'none';
-      } else {
-        loadingEl.style.display = 'none';
-        if (state.projects.length === 0) {
-          showEmptyState();
-        }
-      }
-    }
-
-    // Show empty state
-    function showEmptyState() {
-      loadingEl.style.display = 'none';
-
-      // Update message based on auth status
-      if (state.accessToken && state.userInfo) {
-        // User is signed in - show tabs and empty state in conversations tab
-        signInPromptEl.style.display = 'none';
-        tabsContainerEl.style.display = 'block';
-        tabConversationsEl.style.display = 'block';
-        contentEl.style.display = 'none';
-        emptyStateEl.style.display = 'block';
-
-        const folderUrl = `https://drive.google.com/drive/folders/${state.driveFolderId}`;
-        const projectsFileName = `projects-${state.userInfo.email}.json`;
-        const searchQuery = `name='${projectsFileName}' and '${state.driveFolderId}' in parents and trashed=false`;
-
-        let filesListHtml = '';
-        if (window.debugFolderFiles && window.debugFolderFiles.length > 0) {
-          filesListHtml = '<p style="margin-top: 1rem;"><strong>Files found in this folder:</strong></p><ul style="text-align: left; max-width: 600px; margin: 0.5rem auto; font-size: 0.875rem; background: var(--bg-secondary); padding: 1rem; border-radius: 0.5rem;">';
-          window.debugFolderFiles.forEach(file => {
-            filesListHtml += `<li style="margin: 0.25rem 0;"><code>${file.name}</code></li>`;
-          });
-          filesListHtml += '</ul>';
-        } else if (window.debugFolderFiles) {
-          filesListHtml = '<p style="margin-top: 1rem; color: var(--error);">❌ Folder appears empty or you don\'t have permission to see files</p>';
-        }
-
-        emptyStateEl.innerHTML = `
-          <h2>📂 No Conversations Yet</h2>
-          <p>Your projects file (<code>${projectsFileName}</code>) wasn't found.</p>
-          <p style="margin-top: 1rem;">To get started:</p>
-          <ol style="text-align: left; max-width: 500px; margin: 1rem auto; line-height: 1.8;">
-            <li>Go to the <strong>📦 Process Exports</strong> tab</li>
-            <li>Find your uploaded ZIP file</li>
-            <li>Click "Add to Queue"</li>
-            <li>Wait for GitHub Actions to process it</li>
-            <li>Refresh this page</li>
-          </ol>
-          <details style="margin-top: 2rem; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
-            <summary style="cursor: pointer; color: var(--text-secondary); font-size: 0.875rem;">🔍 Debug Info</summary>
-            <div style="margin-top: 1rem; font-size: 0.875rem;">
-              <p><strong>Looking for:</strong> <code>${projectsFileName}</code></p>
-              <p><strong>In folder:</strong> <a href="${folderUrl}" target="_blank" style="color: var(--primary);">${state.driveFolderId}</a></p>
-              ${filesListHtml}
+      for (const t of sortedTracks) {
+        const statusClass = `status-${t.status || 'active'}`;
+        html += `
+          <div class="track-card">
+            <div class="track-header">
+              <span class="track-name">${esc(t.name)}</span>
+              <span class="status-badge ${statusClass}">${(t.status || 'active').toUpperCase()}</span>
             </div>
-          </details>
+            <div class="track-focus">${esc(t.current_focus || '')}</div>
         `;
-      } else {
-        // User not signed in - show sign in prompt
-        signInPromptEl.style.display = 'block';
-        tabsContainerEl.style.display = 'none';
-        tabConversationsEl.style.display = 'none';
-        tabExportsEl.style.display = 'none';
+
+        if (t.top_priorities && t.top_priorities.length > 0) {
+          html += '<ul class="priority-list">';
+          for (let i = 0; i < t.top_priorities.length; i++) {
+            const p = t.top_priorities[i];
+            const uClass = `urgency-${p.urgency || 'medium'}`;
+            const uSymbol = p.urgency === 'high' ? '▲' : p.urgency === 'low' ? '▼' : '●';
+            html += `<li><span class="${uClass}">${uSymbol}</span> ${esc(p.action)}</li>`;
+          }
+          html += '</ul>';
+        }
+
+        if (t.blockers && t.blockers.length > 0) {
+          for (const b of t.blockers) {
+            html += `<div class="blocker">Blocked: ${esc(b)}</div>`;
+          }
+        }
+
+        if (t.recent_wins && t.recent_wins.length > 0) {
+          html += '<div class="track-meta">Recent wins: ' + t.recent_wins.map(esc).join(', ') + '</div>';
+        } else {
+          const days = t.days_since_active != null ? `Last active: ${t.days_since_active} day(s) ago` : '';
+          if (days) html += `<div class="track-meta">${days}</div>`;
+        }
+
+        html += '</div>';
+      }
+
+      // Cross-track priorities
+      if (d.cross_track_priorities && d.cross_track_priorities.length > 0) {
+        html += '<div class="section-title">Across All Tracks</div>';
+        for (const p of d.cross_track_priorities) {
+          const uClass = `urgency-${p.urgency || 'medium'}`;
+          html += `
+            <div class="cross-priority">
+              <span class="rank">#${p.rank}</span>
+              <span class="action">${esc(p.action)}${p.why ? ' &mdash; ' + esc(p.why) : ''}</span>
+              <span class="track-tag">${esc(p.track)}</span>
+              <span class="${uClass}">${(p.urgency || '').toUpperCase()}</span>
+            </div>
+          `;
+        }
+      }
+
+      // Connections
+      if (d.connections && d.connections.length > 0) {
+        html += '<div class="section-title">Linked</div>';
+        for (const c of d.connections) {
+          html += `<div class="connection-item">${esc(c)}</div>`;
+        }
+      }
+
+      // Stalling
+      if (d.stalling_tracks && d.stalling_tracks.length > 0) {
+        html += '<div class="section-title">Needs Attention</div>';
+        for (const s of d.stalling_tracks) {
+          html += `<div class="stalling-item">${esc(s)}</div>`;
+        }
+      }
+
+      el.innerHTML = html;
+    }
+
+    // ============================================
+    // CHAT
+    // ============================================
+
+    async function loadKnowledgeContext() {
+      const kbFolderId = await driveFindFolder(state.driveFolderId, 'knowledge-base');
+      if (!kbFolderId) return '';
+
+      let context = '';
+
+      // Load synthesis
+      if (!state.synthesis || !state.synthesisCachedAt || Date.now() - state.synthesisCachedAt > CACHE_TTL) {
+        const metaFolderId = await driveFindFolder(kbFolderId, 'meta');
+        if (metaFolderId) {
+          state.synthesis = await driveDownloadText(metaFolderId, 'synthesis.md');
+          state.synthesisCachedAt = Date.now();
+        }
+      }
+
+      if (state.synthesis) {
+        context += '## Cross-Track Synthesis\n' + state.synthesis + '\n\n';
+      }
+
+      // Include digest summary
+      if (state.digest) {
+        context += '## Current Digest\n';
+        context += 'Focus: ' + (state.digest.focus_recommendation || '') + '\n';
+        for (const t of (state.digest.tracks || [])) {
+          context += `\n### ${t.name} [${t.status}]\n${t.progress_summary || t.current_focus || ''}\n`;
+          if (t.blockers?.length) context += 'Blockers: ' + t.blockers.join(', ') + '\n';
+        }
+        context += '\n';
+      }
+
+      return context;
+    }
+
+    async function sendChatMessage(userMessage) {
+      if (!state.anthropicApiKey) {
+        showMessage('Add your Anthropic API Key in Settings to use chat', 'error');
+        document.getElementById('settingsPanel').classList.add('open');
+        return;
+      }
+
+      document.getElementById('chatEmpty').style.display = 'none';
+
+      // Render user message
+      appendChatMessage('user', userMessage);
+      state.chatHistory.push({ role: 'user', content: userMessage });
+
+      // Show typing indicator
+      const typingEl = appendTypingIndicator();
+
+      try {
+        const knowledgeContext = await loadKnowledgeContext();
+
+        // Check if this is a priority override
+        const isPriorityChange = /prioriti[sz]e|more important|focus on|less important|deprioritize|park/i.test(userMessage);
+
+        let systemPrompt = `You are a personal assistant with complete knowledge of the user's projects, plans, decisions, and progress — derived from their Claude.ai conversation history.
+
+Answer questions concisely and specifically. Reference actual decisions, plans, or conversations when relevant. If you don't know something, say so.
+
+${knowledgeContext}`;
+
+        if (isPriorityChange) {
+          systemPrompt += `\n\nThe user appears to be making a priority decision. After responding, output a JSON block on a new line in this exact format so the system can save it:
+PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": "${new Date().toISOString()}"}`;
+        }
+
+        const messages = state.chatHistory.map(m => ({ role: m.role, content: m.content }));
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': state.anthropicApiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 2048,
+            system: systemPrompt,
+            messages,
+          }),
+        });
+
+        typingEl.remove();
+
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`API error ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        let assistantText = data.content[0].text;
+
+        // Check for priority override
+        const overrideMatch = assistantText.match(/PRIORITY_OVERRIDE:\s*(\{[^}]+\})/);
+        if (overrideMatch) {
+          assistantText = assistantText.replace(/PRIORITY_OVERRIDE:\s*\{[^}]+\}/, '').trim();
+          try {
+            const override = JSON.parse(overrideMatch[1]);
+            await savePriorityOverride(override);
+            showMessage('Priority saved for next pipeline run');
+          } catch {}
+        }
+
+        appendChatMessage('assistant', assistantText);
+        state.chatHistory.push({ role: 'assistant', content: assistantText });
+
+      } catch (e) {
+        typingEl.remove();
+        appendChatMessage('assistant', 'Sorry, I encountered an error: ' + e.message);
+        console.error('Chat error:', e);
       }
     }
 
-    // Update last sync time
-    function updateLastSync() {
-      if (state.lastSync) {
-        const timeAgo = getTimeAgo(state.lastSync);
-        lastSyncEl.textContent = `Synced ${timeAgo}`;
+    async function savePriorityOverride(override) {
+      try {
+        const kbFolderId = await driveFindFolder(state.driveFolderId, 'knowledge-base');
+        if (!kbFolderId) return;
+
+        let priorities = await driveDownloadJSON(kbFolderId, 'priorities.json');
+        if (!priorities || !priorities.priorities) {
+          priorities = { priorities: [] };
+        }
+        priorities.priorities.push(override);
+
+        // Keep only last 20
+        if (priorities.priorities.length > 20) {
+          priorities.priorities = priorities.priorities.slice(-20);
+        }
+
+        await driveUploadJSON(kbFolderId, 'priorities.json', priorities);
+      } catch (e) {
+        console.error('Failed to save priority:', e);
       }
     }
 
-    // Get time ago string
-    function getTimeAgo(date) {
-      const seconds = Math.floor((new Date() - date) / 1000);
-      if (seconds < 60) return 'just now';
-      const minutes = Math.floor(seconds / 60);
-      if (minutes < 60) return `${minutes}m ago`;
-      const hours = Math.floor(minutes / 60);
-      if (hours < 24) return `${hours}h ago`;
-      const days = Math.floor(hours / 24);
-      return `${days}d ago`;
+    function appendChatMessage(role, text) {
+      const messagesEl = document.getElementById('chatMessages');
+      const div = document.createElement('div');
+      div.className = `chat-message ${role}`;
+
+      const bubble = document.createElement('div');
+      bubble.className = 'msg-bubble';
+      bubble.innerHTML = renderMarkdown(text);
+
+      div.appendChild(bubble);
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
-    // Show status message
-    function showMessage(text, type = 'info') {
-      const msg = document.createElement('div');
-      msg.className = `status-message ${type}`;
-      msg.textContent = text;
-      document.body.appendChild(msg);
+    function appendTypingIndicator() {
+      const messagesEl = document.getElementById('chatMessages');
+      const div = document.createElement('div');
+      div.className = 'chat-message assistant';
+      div.innerHTML = '<div class="msg-bubble"><div class="typing-indicator"><span></span><span></span><span></span></div></div>';
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return div;
+    }
 
-      setTimeout(() => {
-        msg.remove();
-      }, 3000);
+    function renderMarkdown(text) {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/`(.+?)`/g, '<code>$1</code>')
+        .replace(/^### (.+)$/gm, '<strong>$1</strong>')
+        .replace(/^## (.+)$/gm, '<strong>$1</strong>')
+        .replace(/^# (.+)$/gm, '<strong>$1</strong>')
+        .replace(/^- (.+)$/gm, '&bull; $1')
+        .replace(/^\d+\. (.+)$/gm, (m, p1, offset, str) => '&bull; ' + p1)
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br>')
+        .replace(/^/, '<p>')
+        .replace(/$/, '</p>');
     }
 
     // ============================================
-    // TAB NAVIGATION
+    // EXPORTS
     // ============================================
 
-    function switchTab(tabName) {
-      // Update tab buttons
-      document.querySelectorAll('.tab').forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.tab === tabName);
-      });
-
-      // Update tab content - show/hide appropriately
-      if (tabName === 'conversations') {
-        tabConversationsEl.style.display = 'block';
-        tabExportsEl.style.display = 'none';
-      } else if (tabName === 'exports') {
-        tabConversationsEl.style.display = 'none';
-        tabExportsEl.style.display = 'block';
-        loadExportsTab();
-      }
-    }
-
-    // ============================================
-    // EXPORT MANAGEMENT & QUEUE
-    // ============================================
-
-    // Load exports tab (list ZIPs and queue status)
     async function loadExportsTab() {
       if (!state.accessToken || !state.driveFolderId) {
         document.getElementById('exportsList').innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 2rem;">Sign in to view exports</p>';
@@ -1977,319 +1263,231 @@
       }
 
       try {
-        // Load queue first
         await loadQueue();
 
-        // List ZIP files in Drive folder
         const response = await gapi.client.drive.files.list({
           q: `'${state.driveFolderId}' in parents and (mimeType='application/zip' or mimeType='application/x-zip-compressed') and trashed=false`,
           fields: 'files(id, name, modifiedTime, size)',
           orderBy: 'modifiedTime desc',
-          pageSize: 50
+          pageSize: 50,
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
         });
 
-        const exports = response.result.files || [];
-        renderExportsList(exports);
-      } catch (error) {
-        console.error('Error loading exports:', error);
+        renderExportsList(response.result.files || []);
+      } catch (e) {
+        console.error('Error loading exports:', e);
         document.getElementById('exportsList').innerHTML = '<p style="color: var(--error); text-align: center; padding: 2rem;">Failed to load exports</p>';
       }
     }
 
-    // Load queue from Drive
     async function loadQueue() {
       try {
-        const searchResponse = await gapi.client.drive.files.list({
-          q: `name='process-queue.json' and '${state.driveFolderId}' in parents and trashed=false`,
-          fields: 'files(id)',
-        });
-
-        if (searchResponse.result.files && searchResponse.result.files.length > 0) {
-          const fileId = searchResponse.result.files[0].id;
-          const fileResponse = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-            { headers: { Authorization: `Bearer ${state.accessToken}` } }
-          );
-
-          if (fileResponse.ok) {
-            state.queue = await fileResponse.json();
-            updateQueueStats();
-            return;
-          }
-        }
-
-        // Queue doesn't exist yet
-        state.queue = { queue: [] };
+        const data = await driveDownloadJSON(state.driveFolderId, 'process-queue.json');
+        state.queue = data || { queue: [] };
         updateQueueStats();
-      } catch (error) {
-        console.error('Error loading queue:', error);
+      } catch {
         state.queue = { queue: [] };
         updateQueueStats();
       }
     }
 
-    // Update queue statistics display
     function updateQueueStats() {
-      const queue = state.queue.queue || [];
-      const pending = queue.filter(item => item.status === 'pending').length;
-      const processing = queue.filter(item => item.status === 'processing').length;
-      const completed = queue.filter(item => item.status === 'completed').length;
-
-      document.getElementById('queuePending').textContent = pending;
-      document.getElementById('queueProcessing').textContent = processing;
-      document.getElementById('queueCompleted').textContent = completed;
+      const q = state.queue.queue || [];
+      document.getElementById('queuePending').textContent = q.filter(i => i.status === 'pending').length;
+      document.getElementById('queueCompleted').textContent = q.filter(i => i.status === 'completed').length;
     }
 
-    // Render exports list
     function renderExportsList(exports) {
       const listEl = document.getElementById('exportsList');
-
       if (exports.length === 0) {
         listEl.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 2rem;">No export files found. Upload Claude export ZIPs to this Drive folder.</p>';
         return;
       }
 
       const queue = state.queue.queue || [];
-      const userEmail = state.userInfo.email;
+      const email = state.userInfo?.email;
 
-      // Filter exports to only show user's own exports or unqueued ones
-      const userExports = exports.filter(exp => {
-        const queueItem = queue.find(q => q.zipFileId === exp.id);
-        // Show if: not in queue yet, OR in queue and belongs to this user
-        return !queueItem || queueItem.email === userEmail;
-      });
-
-      if (userExports.length === 0) {
-        listEl.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 2rem;">No exports for your account. Upload your Claude export ZIPs to this Drive folder.</p>';
-        return;
-      }
-
-      listEl.innerHTML = userExports.map(exp => {
+      listEl.innerHTML = exports.map(exp => {
         const queueItem = queue.find(q => q.zipFileId === exp.id);
         const status = queueItem ? queueItem.status : 'not-queued';
-        const modifiedDate = new Date(exp.modifiedTime);
-        const sizeInMB = (exp.size / (1024 * 1024)).toFixed(2);
+        const date = new Date(exp.modifiedTime).toLocaleString();
+        const size = exp.size ? (exp.size / (1024 * 1024)).toFixed(2) + ' MB' : '';
 
-        let statusBadge = '';
-        let actionButton = '';
-
+        let badge = '', action = '';
         if (status === 'pending') {
-          statusBadge = '<span class="export-status pending">⏳ Pending</span>';
-          actionButton = '<button disabled style="opacity: 0.5;">In Queue</button>';
-        } else if (status === 'processing') {
-          statusBadge = '<span class="export-status processing">⚙️ Processing</span>';
-          actionButton = '<button disabled style="opacity: 0.5;">Processing...</button>';
+          badge = '<span class="export-status pending">Pending</span>';
+          action = '<button disabled class="small">In Queue</button>';
         } else if (status === 'completed') {
-          statusBadge = '<span class="export-status completed">✓ Completed</span>';
-          actionButton = '<button class="secondary" onclick="event.stopPropagation(); reprocessExport(\'' + exp.id + '\', \'' + exp.name + '\')">Reprocess</button>';
+          badge = '<span class="export-status completed">Completed</span>';
+          action = `<button class="secondary small" onclick="event.stopPropagation(); reprocessExport('${exp.id}','${exp.name.replace(/'/g, "\\'")}')">Reprocess</button>`;
+        } else if (status === 'failed') {
+          badge = '<span class="export-status failed">Failed</span>';
+          action = `<button class="small" onclick="event.stopPropagation(); addToQueue('${exp.id}','${exp.name.replace(/'/g, "\\'")}')">Retry</button>`;
         } else {
-          statusBadge = '<span class="export-status" style="background: var(--bg-secondary); color: var(--text);">Not Processed</span>';
-          actionButton = '<button onclick="event.stopPropagation(); addToQueue(\'' + exp.id + '\', \'' + exp.name + '\')">Add to Queue</button>';
+          badge = '';
+          action = `<button class="small" onclick="event.stopPropagation(); addToQueue('${exp.id}','${exp.name.replace(/'/g, "\\'")}')">Add to Queue</button>`;
         }
 
         return `
           <div class="export-item">
-            <div class="export-info">
-              <div class="export-name">📦 ${exp.name}</div>
-              <div class="export-meta">
-                ${modifiedDate.toLocaleString()} • ${sizeInMB} MB
-              </div>
+            <div>
+              <div class="export-name">${esc(exp.name)}</div>
+              <div class="export-meta">${date} ${size ? '&bull; ' + size : ''}</div>
             </div>
-            ${statusBadge}
-            ${actionButton}
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+              ${badge}
+              ${action}
+            </div>
           </div>
         `;
       }).join('');
     }
 
-    // Add export to queue
     async function addToQueue(zipFileId, zipFileName) {
-      if (!state.userInfo) {
-        showMessage('Please sign in first', true);
-        return;
-      }
+      if (!state.userInfo) { showMessage('Please sign in first', 'error'); return; }
 
-      try {
-        // Add to queue
-        const queueItem = {
-          id: Date.now().toString(),
-          zipFileId: zipFileId,
-          zipFileName: zipFileName,
-          email: state.userInfo.email,
-          status: 'pending',
-          addedAt: new Date().toISOString(),
-          processedAt: null,
-          error: null
-        };
+      state.queue.queue.push({
+        id: Date.now().toString(),
+        zipFileId,
+        zipFileName,
+        email: state.userInfo.email,
+        status: 'pending',
+        addedAt: new Date().toISOString(),
+        processedAt: null,
+        error: null,
+      });
 
-        state.queue.queue.push(queueItem);
-
-        // Save queue to Drive
-        await saveQueue();
-
-        showMessage('Added to processing queue!');
-        loadExportsTab(); // Refresh
-      } catch (error) {
-        console.error('Error adding to queue:', error);
-        showMessage('Failed to add to queue', true);
-      }
+      await saveQueue();
+      showMessage('Added to processing queue!');
+      loadExportsTab();
     }
 
-    // Reprocess an export
     async function reprocessExport(zipFileId, zipFileName) {
-      const confirmed = confirm('Reprocess this export? This will overwrite your existing projects file.');
-      if (!confirmed) return;
-
+      if (!confirm('Reprocess this export? This will rebuild your knowledge base.')) return;
       await addToQueue(zipFileId, zipFileName);
     }
 
-    // Save queue to Drive
     async function saveQueue() {
-      try {
-        const content = JSON.stringify(state.queue, null, 2);
-        const blob = new Blob([content], { type: 'application/json' });
-
-        // Check if file exists
-        const searchResponse = await gapi.client.drive.files.list({
-          q: `name='process-queue.json' and '${state.driveFolderId}' in parents and trashed=false`,
-          fields: 'files(id)',
-        });
-
-        let fileId = null;
-        if (searchResponse.result.files && searchResponse.result.files.length > 0) {
-          fileId = searchResponse.result.files[0].id;
-        }
-
-        const metadata = {
-          name: 'process-queue.json',
-          mimeType: 'application/json',
-        };
-
-        if (!fileId) {
-          metadata.parents = [state.driveFolderId];
-        }
-
-        const form = new FormData();
-        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-        form.append('file', blob);
-
-        const url = fileId
-          ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
-          : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-
-        const response = await fetch(url, {
-          method: fileId ? 'PATCH' : 'POST',
-          headers: { Authorization: `Bearer ${state.accessToken}` },
-          body: form,
-        });
-
-        if (response.ok) {
-          console.log('Queue saved to Drive');
-          return true;
-        } else {
-          throw new Error('Failed to save queue');
-        }
-      } catch (error) {
-        console.error('Error saving queue:', error);
-        return false;
-      }
+      await driveUploadJSON(state.driveFolderId, 'process-queue.json', state.queue);
     }
 
-    // Make functions available globally
     window.addToQueue = addToQueue;
     window.reprocessExport = reprocessExport;
+
+    // ============================================
+    // TAB NAVIGATION
+    // ============================================
+
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('tab-' + tabName).classList.add('active');
+
+      if (tabName === 'exports') loadExportsTab();
+      if (tabName === 'brief') loadDigest();
+    }
+
+    // ============================================
+    // UTILITIES
+    // ============================================
+
+    function esc(s) {
+      if (!s) return '';
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    function showMessage(text, type = 'info') {
+      const msg = document.createElement('div');
+      msg.className = `status-message${type === 'error' ? ' error' : ''}`;
+      msg.textContent = text;
+      document.body.appendChild(msg);
+      setTimeout(() => msg.remove(), 3000);
+    }
 
     // ============================================
     // EVENT LISTENERS
     // ============================================
 
-    // Tab switching
-    document.querySelectorAll('.tab').forEach(tab => {
-      tab.addEventListener('click', () => switchTab(tab.dataset.tab));
-    });
-
-    // Event Listeners
-    signInBtn.addEventListener('click', handleSignIn);
-    signOutBtn.addEventListener('click', handleSignOut);
-
+    document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+    document.getElementById('signInBtn').addEventListener('click', handleSignIn);
+    document.getElementById('signOutBtn').addEventListener('click', handleSignOut);
     document.getElementById('refreshBtn').addEventListener('click', () => {
-      loadProjects();
+      state.digestCachedAt = null;
+      state.synthesisCachedAt = null;
+      loadDigest();
     });
 
-    document.getElementById('settingsBtn').addEventListener('click', () => {
-      settingsPanelEl.classList.add('open');
-    });
-
-    document.getElementById('closeSettings').addEventListener('click', () => {
-      settingsPanelEl.classList.remove('open');
-    });
+    document.getElementById('settingsBtn').addEventListener('click', () => document.getElementById('settingsPanel').classList.add('open'));
+    document.getElementById('closeSettings').addEventListener('click', () => document.getElementById('settingsPanel').classList.remove('open'));
 
     document.getElementById('saveSettings').addEventListener('click', async () => {
-      state.fileId = driveFileIdInput.value;
-      state.oauthClientId = oauthClientIdInput.value;
-      state.driveFolderId = driveFolderIdInput.value;
+      state.oauthClientId = document.getElementById('oauthClientId').value;
+      state.driveFolderId = document.getElementById('driveFolderId').value;
+      state.anthropicApiKey = document.getElementById('anthropicApiKey').value;
 
-      localStorage.setItem('driveFileId', state.fileId);
       localStorage.setItem('oauthClientId', state.oauthClientId);
       localStorage.setItem('driveFolderId', state.driveFolderId);
+      localStorage.setItem('anthropicApiKey', state.anthropicApiKey);
 
-      settingsPanelEl.classList.remove('open');
-      showMessage('Settings saved! Please refresh to apply OAuth changes.');
+      document.getElementById('settingsPanel').classList.remove('open');
+      showMessage('Settings saved!');
 
-      // Re-initialize auth if OAuth settings changed
-      if (state.oauthClientId) {
+      if (state.anthropicApiKey) {
+        document.getElementById('chatNeedsApiKey').style.display = 'none';
+      }
+
+      if (state.oauthClientId && !state.accessToken) {
         await initGoogleAuth();
       }
     });
 
     document.getElementById('clearCache').addEventListener('click', () => {
-      localStorage.removeItem('projectsCache');
-      localStorage.removeItem('lastSync');
+      localStorage.removeItem('digestCache');
+      state.digest = null;
+      state.digestCachedAt = null;
+      state.synthesis = null;
+      state.synthesisCachedAt = null;
       showMessage('Cache cleared!');
-      settingsPanelEl.classList.remove('open');
+      document.getElementById('settingsPanel').classList.remove('open');
     });
 
-    document.getElementById('showCompleted').addEventListener('change', toggleCompleted);
-    document.getElementById('hideEmpty').addEventListener('change', toggleEmpty);
-    document.getElementById('showArchived').addEventListener('change', () => {
-      state.showArchived = document.getElementById('showArchived').checked;
-      localStorage.setItem('showArchived', state.showArchived);
-      renderConversations();
+    // Chat input
+    const chatInput = document.getElementById('chatInput');
+    const chatSend = document.getElementById('chatSend');
+
+    chatSend.addEventListener('click', () => {
+      const msg = chatInput.value.trim();
+      if (!msg) return;
+      chatInput.value = '';
+      chatInput.style.height = 'auto';
+      sendChatMessage(msg);
     });
 
-    projectFilterEl.addEventListener('change', (e) => {
-      state.selectedProject = e.target.value;
-      renderConversations();
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        chatSend.click();
+      }
     });
 
-    priorityFilterEl.addEventListener('change', (e) => {
-      state.selectedPriority = e.target.value;
-      renderConversations();
+    chatInput.addEventListener('input', () => {
+      chatInput.style.height = 'auto';
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
     });
 
-    sortByEl.addEventListener('change', (e) => {
-      state.sortBy = e.target.value;
-      localStorage.setItem('sortBy', state.sortBy);
-      renderConversations();
+    // Chat suggestions
+    document.querySelectorAll('.chat-suggestion').forEach(s => {
+      s.addEventListener('click', () => {
+        const q = s.dataset.q;
+        if (q) sendChatMessage(q);
+      });
     });
 
-    searchBoxEl.addEventListener('input', (e) => {
-      state.searchQuery = e.target.value.toLowerCase().trim();
-      renderConversations();
-    });
-
-    // Make functions available globally
-    window.markComplete = markComplete;
-    window.setPriority = setPriority;
-    window.confirmPriority = confirmPriority;
-    window.isPriorityConfirmed = isPriorityConfirmed;
-    window.toggleArchive = toggleArchive;
-
-    // Initialize app
+    // Start
     init();
-
-    // Update "time ago" every minute
-    setInterval(updateLastSync, 60000);
   </script>
 </body>
 </html>
