@@ -664,8 +664,8 @@
         <small>Shared Drive folder with your knowledge base</small>
       </div>
       <div class="settings-group">
-        <label for="anthropicApiKey">DeepSeek API Key</label>
-        <input type="password" id="anthropicApiKey" placeholder="sk-...">
+        <label for="deepseekApiKey">DeepSeek API Key</label>
+        <input type="password" id="deepseekApiKey" placeholder="sk-...">
         <small>Required for Chat tab. Stored locally only, sent directly to DeepSeek API.</small>
       </div>
       <button id="saveSettings">Save Settings</button>
@@ -679,10 +679,21 @@
       navigator.serviceWorker.register('service-worker.js').catch(() => {});
     }
 
+    // Migrate old API key from Anthropic days
+    const oldKey = localStorage.getItem('anthropicApiKey');
+    if (oldKey && !localStorage.getItem('deepseekApiKey')) {
+      if (oldKey.startsWith('sk-ant-')) {
+        localStorage.removeItem('anthropicApiKey');
+      } else {
+        localStorage.setItem('deepseekApiKey', oldKey);
+        localStorage.removeItem('anthropicApiKey');
+      }
+    }
+
     const state = {
       oauthClientId: localStorage.getItem('oauthClientId') || '',
       driveFolderId: localStorage.getItem('driveFolderId') || '',
-      anthropicApiKey: localStorage.getItem('anthropicApiKey') || '',
+      deepseekApiKey: localStorage.getItem('deepseekApiKey') || '',
       accessToken: null,
       userInfo: null,
       digest: null,
@@ -714,7 +725,7 @@
 
       document.getElementById('oauthClientId').value = state.oauthClientId;
       document.getElementById('driveFolderId').value = state.driveFolderId;
-      document.getElementById('anthropicApiKey').value = state.anthropicApiKey;
+      document.getElementById('deepseekApiKey').value = state.deepseekApiKey;
 
       await initGoogleAuth();
     }
@@ -870,7 +881,7 @@
         document.getElementById('userAvatar').src = state.userInfo.picture || '';
         document.getElementById('userEmail').textContent = state.userInfo.email || '';
 
-        if (!state.anthropicApiKey) {
+        if (!state.deepseekApiKey) {
           document.getElementById('chatNeedsApiKey').style.display = 'block';
         }
       } else {
@@ -1199,7 +1210,7 @@
     }
 
     async function reevaluateDigest() {
-      if (!state.anthropicApiKey) {
+      if (!state.deepseekApiKey) {
         showMessage('Add your DeepSeek API Key in Settings to re-evaluate', 'error');
         document.getElementById('settingsPanel').classList.add('open');
         return;
@@ -1289,7 +1300,7 @@ STRICT LIMITS: top_priorities max 3 items, blockers max 2 items, recent_wins max
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + state.anthropicApiKey,
+            'Authorization': 'Bearer ' + state.deepseekApiKey,
           },
           body: JSON.stringify({ model: 'deepseek-chat', max_tokens: 8192, temperature: 0.3, messages: [{ role: 'user', content: prompt }] }),
         });
@@ -1395,7 +1406,7 @@ STRICT LIMITS: top_priorities max 3 items, blockers max 2 items, recent_wins max
     }
 
     async function sendChatMessage(userMessage) {
-      if (!state.anthropicApiKey) {
+      if (!state.deepseekApiKey) {
         showMessage('Add your DeepSeek API Key in Settings to use chat', 'error');
         document.getElementById('settingsPanel').classList.add('open');
         return;
@@ -1431,7 +1442,7 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + state.anthropicApiKey,
+            'Authorization': 'Bearer ' + state.deepseekApiKey,
           },
           body: JSON.stringify({
             model: 'deepseek-chat',
@@ -1745,16 +1756,16 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
     document.getElementById('saveSettings').addEventListener('click', async () => {
       state.oauthClientId = document.getElementById('oauthClientId').value;
       state.driveFolderId = document.getElementById('driveFolderId').value;
-      state.anthropicApiKey = document.getElementById('anthropicApiKey').value;
+      state.deepseekApiKey = document.getElementById('deepseekApiKey').value;
 
       localStorage.setItem('oauthClientId', state.oauthClientId);
       localStorage.setItem('driveFolderId', state.driveFolderId);
-      localStorage.setItem('anthropicApiKey', state.anthropicApiKey);
+      localStorage.setItem('deepseekApiKey', state.deepseekApiKey);
 
       document.getElementById('settingsPanel').classList.remove('open');
       showMessage('Settings saved!');
 
-      if (state.anthropicApiKey) {
+      if (state.deepseekApiKey) {
         document.getElementById('chatNeedsApiKey').style.display = 'none';
       }
 
