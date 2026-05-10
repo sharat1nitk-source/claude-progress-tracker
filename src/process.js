@@ -188,10 +188,12 @@ class ConversationProcessor {
     const existing = queue.queue.find(q => q.zipFileId === latest.id);
 
     if (existing) {
-      if (this.config.forceReprocess) {
+      if (this.config.forceReprocess || existing.status === 'failed') {
         existing.status = 'pending';
         existing.email = email;
-        console.log(`  Re-queued (force): ${latest.name}`);
+        existing.error = undefined;
+        const reason = this.config.forceReprocess ? 'force' : 'auto-retry after failure';
+        console.log(`  Re-queued (${reason}): ${latest.name}`);
       } else {
         console.log(`  Already in queue: ${latest.name}`);
       }
