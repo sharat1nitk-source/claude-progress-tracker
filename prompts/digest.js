@@ -17,6 +17,11 @@ IMPORTANT RULES — read carefully:
 
 5. **User priorities**: "User-Set Track Priorities" and "User-Stated Priority Overrides" MUST directly influence the focus_recommendation and cross_track_priorities.
 
+6. **Consistency is mandatory**:
+- If a track's status is "completed" or should be archived, it MUST NOT appear in cross_track_priorities. These are mutually exclusive.
+- If a user note explicitly says a blocker is resolved or a track is ready (e.g., "dev environment is ready"), do NOT list it as a blocker or blocking dependency.
+- Every cross_track_priority's "why" field must be factually verifiable from the track documents, not an assumption. If you cannot verify it, do not rank it.
+
 First, analyze each track's real priority by weighing these signals in order of importance:
 - **User notes and priorities** (highest — these override everything)
 - **Recency**: Recently active tracks matter more than dormant ones

@@ -98,9 +98,18 @@ class ConversationProcessor {
 
   extractMemoryStrings(memories) {
     if (!memories || memories.length === 0) return [];
-    return memories
-      .filter(m => m && (m.content || m.text || m.summary))
-      .map(m => m.content || m.text || m.summary);
+    const strings = [];
+    for (const m of memories) {
+      if (m.conversations_memory && typeof m.conversations_memory === 'string') {
+        strings.push(m.conversations_memory);
+      }
+      if (m.project_memories && typeof m.project_memories === 'object') {
+        for (const val of Object.values(m.project_memories)) {
+          if (val && typeof val === 'string') strings.push(val);
+        }
+      }
+    }
+    return strings;
   }
 
   async loadPriorities(folderId) {

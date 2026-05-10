@@ -40,3 +40,4 @@ debug/
 # Local config (if user creates one for testing)
 config.json
 *.swp
+analysis-data/

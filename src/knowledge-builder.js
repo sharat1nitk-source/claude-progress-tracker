@@ -21,11 +21,27 @@ class KnowledgeBuilder {
       const { conversation, knowledge } = result;
       const trackName = knowledge.track;
 
+      // Primary track
       if (!tracks.has(trackName)) {
         tracks.set(trackName, { name: trackName, conversations: [] });
       }
-
       tracks.get(trackName).conversations.push({ conversation, knowledge });
+
+      // Secondary tracks
+      for (const sec of (knowledge.secondary_tracks || [])) {
+        const secTrack = sec.track || sec;  // handle string or object
+        const secReason = sec.reason || '';
+        if (!secTrack || secTrack === trackName) continue;
+        if (!tracks.has(secTrack)) {
+          tracks.set(secTrack, { name: secTrack, conversations: [] });
+        }
+        tracks.get(secTrack).conversations.push({
+          conversation,
+          knowledge,
+          isSecondary: true,
+          secondaryReason: secReason
+        });
+      }
     }
 
     for (const track of tracks.values()) {
@@ -86,7 +102,22 @@ class KnowledgeBuilder {
 
     // Deduplicate blockers: remove any blocker that was later explicitly marked as resolved
     const resolvedTexts = new Set(allResolvedBlockers.map(b => b.text.trim().toLowerCase()));
-    const activeBlockers = allBlockers.filter(b => !resolvedTexts.has(b.text.trim().toLowerCase()));
+    let activeBlockers = allBlockers.filter(b => !resolvedTexts.has(b.text.trim().toLowerCase()));
+
+    // Near-match dedup: remove blockers with 70%+ text overlap
+    const dedupedBlockers = [];
+    for (const b of activeBlockers) {
+      const bLower = b.text.trim().toLowerCase();
+      const isDup = dedupedBlockers.some(existing => {
+        const exLower = existing.text.trim().toLowerCase();
+        if (exLower === bLower) return true;
+        const minLen = Math.min(exLower.length, bLower.length);
+        const overlapThreshold = Math.floor(minLen * 0.7);
+        return exLower.includes(bLower.substring(0, overlapThreshold)) ||
+               bLower.includes(exLower.substring(0, overlapThreshold));
+      });
+      if (!isDup) dedupedBlockers.push(b);
+    }
 
     // Track unique resolved blockers for display
     const uniqueResolved = [];
@@ -119,12 +150,17 @@ class KnowledgeBuilder {
     const allDone = totalActionable > 0 ? (allCompleted.length / totalActionable) >= 0.9 : false;
     const noPendingLeft = allPending.length === 0 && totalActionable > 0;
 
+    const daysSinceLastActive = conversations.length > 0
+      ? (new Date() - new Date(conversations[conversations.length - 1].conversation.updated_at)) / 86400000
+      : 999;
+    const hasRecentPending = allPending.length > 0 && daysSinceLastActive < 30;
+
     let overallStatus;
     if (latestIsBlocked && hasRecentActiveBlockers && !trajectoryPositive) {
       overallStatus = 'blocked';
     } else if (conversations.length >= 2 && trajectoryPositive && !latestIsBlocked) {
       overallStatus = 'active';
-    } else if (allDone || noPendingLeft) {
+    } else if ((allDone || noPendingLeft) && daysSinceLastActive > 30 && !hasRecentPending) {
       overallStatus = 'completed';
     } else if (allPending.length > 0 || conversations.length > 0) {
       overallStatus = 'active';
@@ -176,7 +212,7 @@ class KnowledgeBuilder {
 
     if (activeBlockers.length > 0) {
       md += `## Blockers\n`;
-      for (const b of activeBlockers) md += `- ${b.text} — ${b.convName}, ${b.date}\n`;
+      for (const b of dedupedBlockers) md += `- ${b.text} — ${b.convName}, ${b.date}\n`;
       md += '\n';
     }
     if (uniqueResolved.length > 0) {
@@ -200,7 +236,13 @@ class KnowledgeBuilder {
     const connections = [...connectionMap.keys()];
     if (connections.length > 0) {
       md += `## Connections to Other Tracks\n`;
-      for (const c of connections) md += `- ${c}\n`;
+      for (const c of connections) {
+        if (typeof c === 'object' && c !== null && c.track) {
+          md += `- **${c.track}**: ${c.reason || ''}\n`;
+        } else if (typeof c === 'string') {
+          md += `- ${c}\n`;
+        }
+      }
       md += '\n';
     }
 
@@ -218,11 +260,21 @@ class KnowledgeBuilder {
   }
 
   async buildSynthesis(trackDocuments) {
+    // Compute explicit counts so AI doesn't fabricate zeros
+    const countData = trackDocuments.map(({ name, document }) => {
+      const pendingMatch = document.match(/## Pending Tasks\n([\s\S]*?)(?=\n## |\n*$)/);
+      const blockerMatch = document.match(/## Blockers\n([\s\S]*?)(?=\n## |\n*$)/);
+      const pendingCount = pendingMatch ? (pendingMatch[1].match(/^- /gm) || []).length : 0;
+      const blockerCount = blockerMatch ? (blockerMatch[1].match(/^- /gm) || []).length : 0;
+      return { name, pendingCount, blockerCount };
+    });
+    const countHint = countData.map(t => `${t.name}: ${t.pendingCount} pending, ${t.blockerCount} blockers`).join('; ');
+
     const trackSummaries = trackDocuments
       .map(({ name, document }) => `### ${name}\n${document.split('\n').slice(0, 30).join('\n')}`)
       .join('\n\n---\n\n');
 
-    const prompt = buildSynthesisPrompt(trackSummaries);
+    const prompt = buildSynthesisPrompt(trackSummaries, countHint);
 
     const apiParams = { model: this.model, max_tokens: config.synthesisMaxTokens, messages: [{ role: 'user', content: prompt }] };
     apiParams.temperature = config.temperature;
@@ -279,8 +331,8 @@ class KnowledgeBuilder {
     let docSection = '\n## Project Documents\n';
     for (const doc of project.docs) {
       // Truncate very large docs to avoid token overflow in digest
-      const content = doc.content.length > 4000
-        ? doc.content.substring(0, 4000) + '\n... (truncated)'
+      const content = doc.content.length > 8000
+        ? doc.content.substring(0, 8000) + '\n... (truncated)'
         : doc.content;
       docSection += `\n### ${doc.filename}\n${content}\n`;
     }

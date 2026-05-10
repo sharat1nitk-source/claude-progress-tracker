@@ -78,7 +78,7 @@ class KnowledgeExtractor {
     const arrayFields = [
       'decisions_made', 'plans_created', 'tasks_completed',
       'tasks_pending', 'blockers', 'blockers_resolved', 'open_questions',
-      'key_insights', 'connections_to',
+      'key_insights', 'connections_to', 'secondary_tracks',
     ];
     for (const field of arrayFields) {
       if (!Array.isArray(parsed[field])) {
