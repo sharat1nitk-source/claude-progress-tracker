@@ -38,7 +38,7 @@ Extract:
 Respond ONLY with valid JSON (no markdown, no explanation):
 {
   "track": "...",
-  "conversation_type": "...",
+  "conversation_type": "planning|research|execution|decision|reflection",
   "narrative_summary": "...",
   "decisions_made": [],
   "plans_created": [],
@@ -50,8 +50,8 @@ Respond ONLY with valid JSON (no markdown, no explanation):
   "key_insights": [],
   "connections_to": [],
   "secondary_tracks": [],
-  "status": "...",
-  "importance": "...",
+  "status": "active|parked|blocked|completed",
+  "importance": "high|medium|low",
   "progress_narrative": "..."
 }`;
 }

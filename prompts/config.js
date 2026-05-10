@@ -6,7 +6,7 @@ const config = {
   // Base temperature for structured extraction
   temperature: 0.3,
   // Max tokens for extraction per conversation
-  extractionMaxTokens: 2048,
+  extractionMaxTokens: 4096,
   // Max tokens for digest generation
   digestMaxTokens: 8192,
   // Max tokens for synthesis generation
