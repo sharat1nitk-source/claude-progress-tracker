@@ -8,9 +8,9 @@ const config = {
   // Max tokens for extraction per conversation
   extractionMaxTokens: 4096,
   // Max tokens for digest generation
-  digestMaxTokens: 8192,
+  digestMaxTokens: 16384,
   // Max tokens for synthesis generation
-  synthesisMaxTokens: 4096,
+  synthesisMaxTokens: 8192,
 };
 
 export default config;

@@ -103,7 +103,13 @@ class DigestGenerator {
       cleaned = cleaned.replace(/```\s*/, '').replace(/```\s*$/, '');
     }
 
-    const parsed = JSON.parse(cleaned);
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      console.warn(`  Warning: digest JSON parse failed (${e.message}), using fallback`);
+      return this.fallbackDigest();
+    }
 
     if (!parsed.tracks || !Array.isArray(parsed.tracks)) {
       throw new Error('Digest missing tracks array');
@@ -154,6 +160,16 @@ class DigestGenerator {
     digest.stalling_tracks = digest.tracks
       .filter(t => t.days_since_active >= stallingThreshold && t.status !== 'completed')
       .map(t => `${t.name} — ${t.days_since_active} days inactive`);
+  }
+
+  fallbackDigest() {
+    return {
+      tracks: [],
+      cross_track_priorities: [],
+      connections: [],
+      stalling_tracks: [],
+      focus_recommendation: 'Digest generation failed — please check individual track documents for details.',
+    };
   }
 }
 
