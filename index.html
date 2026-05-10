@@ -1764,6 +1764,10 @@ IMPORTANT RULES — read carefully:
 
 4. **User priorities**: "User-Set Track Priorities" MUST directly influence the focus_recommendation and cross_track_priorities.
 
+5. **Analysis-archived tracks**: Tracks marked as "ANALYSIS ARCHIVED" are frozen. Do NOT include them in cross_track_priorities or stalling_tracks. They should appear in tracks[] with status "frozen".
+
+6. **Group tracks by DOMAIN COHERENCE**: Look at each track's name and current_focus. Group into 4-8 logical categories. Every track in tracks[] MUST appear in exactly one group. Domain coherence is MANDATORY: "Geopolitics" does NOT go in "Finance", "Politics" does NOT go in "Entertainment". If a track doesn't fit any existing group, create a fitting group (e.g., "World & Politics" for geopolitics + politics).
+
 First, analyze each track's real priority by weighing these signals:
 - **User notes** (highest — these override stale document data)
 - **Trajectory**: Is the track trending active/improving or stuck/declining?

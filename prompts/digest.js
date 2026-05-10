@@ -19,7 +19,12 @@ IMPORTANT RULES — read carefully:
 
 6. **Analysis-archived tracks**: Some tracks may be marked as "ANALYSIS ARCHIVED" — the user has explicitly chosen to stop analyzing them. These tracks' data is frozen and may be stale. Do NOT include them in cross_track_priorities or stalling_tracks. They should appear in tracks[] with status "frozen".
 
-7. **Group tracks into logical categories**: Look at all track names and their current state. Group them into 4-8 logical categories (e.g., "AI & Tech", "Career & Finance", "Home & Devices", "Entertainment", etc.). Each track belongs to exactly ONE group. Choose groups that make sense given the actual track names — don't force-fit into predefined categories.
+7. **Group tracks by DOMAIN COHERENCE**: Look at each track's name and current_focus to determine its primary domain. Group into 4-8 logical categories. CRITICAL RULES:
+   - Each track belongs to exactly ONE group. NO track left ungrouped — every slug in tracks[] MUST appear in exactly one group.
+   - Domain coherence is MANDATORY: "Geopolitics" does NOT go in "Finance", "Politics" does NOT go in "Entertainment". If a track doesn't fit any existing group, create a fitting group (e.g., "World & Politics" for geopolitics + politics).
+   - Group names should reflect the domain, not the action (e.g., "Home & Devices" not "Home Maintenance").
+   - Common sense examples: a "Portfolio Management System" is Career/Tech, not Home devices. "Robotics & Automation" is AI/Tech, not Career. Real estate ("Adarsh Welkin Park") goes in "Home & Real Estate" or similar.
+   - If only 1-2 tracks form a coherent domain, that's fine — a small group is better than misgrouping.
 
 First, analyze each track's real priority by weighing these signals in order of importance:
 - **User notes and priorities** (highest — these override everything)
