@@ -11,7 +11,7 @@ A personal AI knowledge assistant that processes Claude.ai chat exports into a l
 4. Provides a chat interface to query your knowledge base
 5. All data stays private on Google Drive — never committed to the public repo
 
-**Tech Stack:** Node.js (ES modules), Google Drive API, DeepSeek API (deepseek-chat), Google OAuth 2.0, vanilla JavaScript PWA
+**Tech Stack:** Node.js (ES modules), Google Drive API, DeepSeek API (deepseek-v4-pro), Google OAuth 2.0, vanilla JavaScript PWA
 
 ## Development Commands
 
@@ -46,9 +46,11 @@ Claude.ai export ZIP (on Google Drive)
 
 ### PWA (index.html)
 ```
-Tab 1: Focus Brief — reads digest-{email}.json, shows priorities + track cards
-Tab 2: Chat — conversational Q&A over knowledge base via DeepSeek (browser-side API call)
-Tab 3: Exports — queue management for ZIP processing
+Tab 1: Focus Brief — group filter chips, track cards with priorities/blockers/wins, cross-track priorities
+Tab 2: Search — full-text search across all track documents
+Tab 3: Chat — conversational Q&A over knowledge base via DeepSeek (browser-side API call)
+Tab 4: Exports — queue management for ZIP processing
+Features: dark/light theme toggle, two-level archive (view + analysis-freeze), AI-driven track grouping, per-section user notes, track priority overrides
 ```
 
 ### Source Structure
@@ -79,7 +81,13 @@ Tab 3: Exports — queue management for ZIP processing
 
 **src/state-manager.js** — Delta processing (SHA256 content hashing, skip unchanged conversations)
 
-**index.html** — Single-file PWA with three tabs
+**prompts/** — AI prompt templates (config.js, digest.js, chat-system.js, extractor.js, builder.js)
+
+**test-api.js** — Full pipeline test with real API calls (synthesis + digest)
+**test-verify.js** — Structural verification without API (no [object Object], status distribution, blocker dedup)
+**test-extraction.js** — Extraction quality test (fresh vs cached comparison)
+
+**index.html** — Single-file PWA with four tabs
 - OAuth redirect flow for Google auth
 - Pre-creates kb-output file via OAuth (service account can't create, only update)
 - Chat loads full track documents + synthesis + digest for rich context
@@ -92,13 +100,17 @@ Tab 3: Exports — queue management for ZIP processing
   process-queue.json              — export processing queue
   processed_conversations-{email}.json — delta state per user
   kb-output-{email}.json          — bundled KB: track docs, synthesis, digest
+  kb-settings.json                — user settings: archives, priorities, notes, groups
   kb-priorities.json              — user-stated priority overrides (from Chat tab)
 ```
 
 ## Key Design Decisions
 
-- **All Claude calls use deepseek-chat** — DeepSeek provides quality at lower cost
-- **Priorities persist via priorities.json** — Chat tab writes priority overrides to Drive, digest generator reads them
+- **Pipeline uses deepseek-v4-pro** — best available model for quality extraction and synthesis
+- **AI-driven track grouping** — digest prompt groups tracks by domain coherence (8 groups, recalculated each run)
+- **Two-level archive** — Level 1 hides from view (track still updated), Level 2 freezes analysis (pipeline skips)
+- **User settings persist via kb-settings.json** — archives, priorities, notes, section notes, group overrides
+- **Priorities persist via kb-priorities.json** — Chat tab writes priority overrides to Drive, digest generator reads them
 - **memories.json from export** feeds into digest generation for additional user context
 - **1-hour cache TTL** on digest and synthesis in the PWA for offline/performance
 - **Track slugs** are lowercase-hyphenated: "Career Transition" -> "career-transition"
