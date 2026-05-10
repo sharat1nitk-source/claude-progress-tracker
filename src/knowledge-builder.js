@@ -12,6 +12,14 @@ class KnowledgeBuilder {
     return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }
 
+  asString(value) {
+    if (typeof value === 'string') return value;
+    if (!value || typeof value !== 'object') return String(value);
+    return value.text || value.description || value.task || value.action
+      || value.issue || value.blocker || value.question || value.insight
+      || value.decision || value.plan || value.name || JSON.stringify(value);
+  }
+
   groupByTrack(extractionResults) {
     const tracks = new Map();
 
@@ -72,30 +80,28 @@ class KnowledgeBuilder {
       const convName = conversation.name;
 
       for (const d of knowledge.decisions_made) {
-        allDecisions.push(`${d} — ${convName}, ${date}`);
+        allDecisions.push(`${this.asString(d)} — ${convName}, ${date}`);
       }
       for (const p of knowledge.plans_created) {
-        allPlans.push(p);
+        allPlans.push(this.asString(p));
       }
       for (const t of knowledge.tasks_completed) {
-        allCompleted.push(`${t} (${date})`);
+        allCompleted.push(`${this.asString(t)} (${date})`);
       }
       for (const t of knowledge.tasks_pending) {
-        allPending.push(t);
+        allPending.push(this.asString(t));
       }
       for (const b of (knowledge.blockers || [])) {
-        const text = typeof b === 'string' ? b : (b.text || b.description || b.blocker || b.issue || JSON.stringify(b));
-        allBlockers.push({ text, convName, date });
+        allBlockers.push({ text: this.asString(b), convName, date });
       }
       for (const b of (knowledge.blockers_resolved || [])) {
-        const text = typeof b === 'string' ? b : (b.text || b.description || b.blocker || b.issue || JSON.stringify(b));
-        allResolvedBlockers.push({ text, convName, date });
+        allResolvedBlockers.push({ text: this.asString(b), convName, date });
       }
       for (const q of knowledge.open_questions) {
-        allQuestions.push(q);
+        allQuestions.push(this.asString(q));
       }
       for (const i of knowledge.key_insights) {
-        allInsights.push(i);
+        allInsights.push(this.asString(i));
       }
       for (const c of knowledge.connections_to) {
         connectionMap.set(c, true);
@@ -150,8 +156,7 @@ class KnowledgeBuilder {
     const recentBlockerTexts = new Set();
     for (const { knowledge } of recentConvs) {
       for (const b of (knowledge.blockers || [])) {
-        const text = typeof b === 'string' ? b : (b.text || b.description || b.blocker || b.issue || JSON.stringify(b));
-        recentBlockerTexts.add(text.trim().toLowerCase());
+        recentBlockerTexts.add(this.asString(b).trim().toLowerCase());
       }
     }
     const hasRecentActiveBlockers = activeBlockers.some(b => recentBlockerTexts.has(b.text.trim().toLowerCase()));

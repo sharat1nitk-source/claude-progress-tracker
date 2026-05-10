@@ -62,7 +62,7 @@ class DigestGenerator {
     }
 
     if (memories && memories.length > 0) {
-      const memoryLines = memories.slice(0, 50).map(m => `- ${m}`).join('\n');
+      const memoryLines = memories.slice(0, 30).map(m => `- ${m.length > 200 ? m.substring(0, 200) + '...' : m}`).join('\n');
       contextBlock += `\n\n## User's Claude.ai Memories\nThese are the user's own stated facts, preferences, and context:\n${memoryLines}`;
     }
 
