@@ -1680,8 +1680,8 @@ STRICT LIMITS: top_priorities max 3 items, blockers max 2 items, recent_wins max
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + state.deepseekApiKey,
           },
-          // Model sourced from prompts/config.json (deepseek-reasoner doesn't support temperature)
-          body: JSON.stringify({ model: 'deepseek-reasoner', max_tokens: 8192, messages: [{ role: 'user', content: prompt }] }),
+          // Model sourced from prompts/config.js
+          body: JSON.stringify({ model: 'deepseek-v4-pro', max_tokens: 8192, temperature: 0.3, messages: [{ role: 'user', content: prompt }] }),
         });
 
         if (!response.ok) throw new Error(`API error ${response.status}: ${await response.text()}`);
@@ -1824,8 +1824,8 @@ PRIORITY_OVERRIDE: {"statement": "what the user wants to prioritize", "set_at": 
             'Authorization': 'Bearer ' + state.deepseekApiKey,
           },
           body: JSON.stringify({
-            // Model sourced from prompts/config.json
-            model: 'deepseek-reasoner',
+            // Model sourced from prompts/config.js
+            model: 'deepseek-v4-pro',
             max_tokens: 2048,
             messages: apiMessages,
           }),

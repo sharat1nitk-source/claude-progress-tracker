@@ -1,8 +1,8 @@
 // Model configuration for all AI calls in the pipeline.
 // Change model here to switch all stages to a different model.
 const config = {
-  // DeepSeek models: 'deepseek-chat' (V3) or 'deepseek-reasoner' (R1)
-  model: 'deepseek-reasoner',
+  // Available: 'deepseek-v4-flash' (fast/cheap), 'deepseek-v4-pro' (best quality)
+  model: 'deepseek-v4-pro',
   // Base temperature for structured extraction
   temperature: 0.3,
   // Max tokens for extraction per conversation

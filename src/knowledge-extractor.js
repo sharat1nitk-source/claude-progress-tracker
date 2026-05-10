@@ -94,7 +94,7 @@ class KnowledgeExtractor {
     const prompt = this.buildPrompt(conversationContext, knownTracks);
 
     const apiParams = { model: this.model, max_tokens: config.extractionMaxTokens, messages: [{ role: 'user', content: prompt }] };
-    if (this.model !== 'deepseek-reasoner') apiParams.temperature = config.temperature;
+    apiParams.temperature = config.temperature;
     const response = await this.client.chat.completions.create(apiParams);
 
     const resultText = response.choices[0].message.content;

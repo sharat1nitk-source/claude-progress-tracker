@@ -1,0 +1,6 @@
+{
+  "model": "deepseek-v4-pro",
+  "temperature": 0.3,
+  "digestMaxTokens": 8192,
+  "chatMaxTokens": 2048
+}

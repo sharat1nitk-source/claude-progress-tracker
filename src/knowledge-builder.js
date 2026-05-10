@@ -225,7 +225,7 @@ class KnowledgeBuilder {
     const prompt = buildSynthesisPrompt(trackSummaries);
 
     const apiParams = { model: this.model, max_tokens: config.synthesisMaxTokens, messages: [{ role: 'user', content: prompt }] };
-    if (this.model !== 'deepseek-reasoner') apiParams.temperature = config.temperature;
+    apiParams.temperature = config.temperature;
     const response = await this.client.chat.completions.create(apiParams);
 
     return response.choices[0].message.content;
