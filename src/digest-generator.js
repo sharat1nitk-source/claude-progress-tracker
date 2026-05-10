@@ -40,7 +40,7 @@ class DigestGenerator {
     return condensed;
   }
 
-  async generate(trackDocuments, synthesis, priorities = null, memories = null, trackPriorities = {}, trackNotes = {}) {
+  async generate(trackDocuments, synthesis, priorities = null, memories = null, trackPriorities = {}, trackNotes = {}, analysisArchivedTracks = new Set(), sectionNotes = {}) {
     if (!trackDocuments || trackDocuments.length === 0) {
       console.log('No track documents to generate digest from.');
       return null;
@@ -73,6 +73,25 @@ class DigestGenerator {
       if (high.length) contextBlock += `\nHigh priority (user explicitly elevated): ${high.join(', ')}`;
       if (low.length) contextBlock += `\nLow priority (user explicitly deprioritized): ${low.join(', ')}`;
       contextBlock += '\nThese MUST influence focus_recommendation and cross_track_priorities ordering.';
+    }
+
+    if (analysisArchivedTracks.size > 0) {
+      contextBlock += `\n\n## Analysis-Archived Tracks (FROZEN — do not update, do not include in priorities)\n${[...analysisArchivedTracks].join(', ')}`;
+    }
+
+    if (Object.keys(sectionNotes).length > 0) {
+      contextBlock += '\n\n## User Section Notes\nThese are user notes on specific items within tracks — they override the document data for those items:\n';
+      for (const [slug, sections] of Object.entries(sectionNotes)) {
+        if (sections.blockers?.length) {
+          for (const b of sections.blockers) contextBlock += `- [${slug}] Blocker "${b.text}" — user note: ${b.note}\n`;
+        }
+        if (sections.pending?.length) {
+          for (const p of sections.pending) contextBlock += `- [${slug}] Pending "${p.text}" — user note: ${p.note}\n`;
+        }
+        if (sections.decisions?.length) {
+          for (const d of sections.decisions) contextBlock += `- [${slug}] Decision "${d.text}" — user note: ${d.note}\n`;
+        }
+      }
     }
 
     const prompt = buildDigestPrompt(contextBlock);
@@ -125,6 +144,9 @@ class DigestGenerator {
     }
     if (!parsed.stalling_tracks) {
       parsed.stalling_tracks = [];
+    }
+    if (!parsed.groups || !Array.isArray(parsed.groups)) {
+      parsed.groups = [];
     }
 
     for (const track of parsed.tracks) {

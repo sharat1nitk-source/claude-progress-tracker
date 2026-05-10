@@ -17,10 +17,9 @@ IMPORTANT RULES — read carefully:
 
 5. **User priorities**: "User-Set Track Priorities" and "User-Stated Priority Overrides" MUST directly influence the focus_recommendation and cross_track_priorities.
 
-6. **Consistency is mandatory**:
-- If a track's status is "completed" or should be archived, it MUST NOT appear in cross_track_priorities. These are mutually exclusive.
-- If a user note explicitly says a blocker is resolved or a track is ready (e.g., "dev environment is ready"), do NOT list it as a blocker or blocking dependency.
-- Every cross_track_priority's "why" field must be factually verifiable from the track documents, not an assumption. If you cannot verify it, do not rank it.
+6. **Analysis-archived tracks**: Some tracks may be marked as "ANALYSIS ARCHIVED" — the user has explicitly chosen to stop analyzing them. These tracks' data is frozen and may be stale. Do NOT include them in cross_track_priorities or stalling_tracks. They should appear in tracks[] with status "frozen".
+
+7. **Group tracks into logical categories**: Look at all track names and their current state. Group them into 4-8 logical categories (e.g., "AI & Tech", "Career & Finance", "Home & Devices", "Entertainment", etc.). Each track belongs to exactly ONE group. Choose groups that make sense given the actual track names — don't force-fit into predefined categories.
 
 First, analyze each track's real priority by weighing these signals in order of importance:
 - **User notes and priorities** (highest — these override everything)
@@ -39,11 +38,14 @@ Respond ONLY with valid JSON (no markdown, no explanation):
 {
   "generated_at": "${new Date().toISOString()}",
   "focus_recommendation": "2-3 sentences max",
+  "groups": [
+    { "name": "Group Name", "track_slugs": ["track-slug-1", "track-slug-2"], "rationale": "one short sentence" }
+  ],
   "tracks": [
     {
       "name": "Track Name",
       "slug": "track-name",
-      "status": "active|stalling|blocked|completed",
+      "status": "active|stalling|blocked|completed|frozen",
       "status_reason": "one short sentence",
       "current_focus": "one short sentence",
       "top_priorities": [
@@ -61,5 +63,5 @@ Respond ONLY with valid JSON (no markdown, no explanation):
   "stalling_tracks": []
 }
 
-STRICT LIMITS: top_priorities max 3 items, blockers max 2 items, recent_wins max 2 items, cross_track_priorities max 8 items.`;
+STRICT LIMITS: groups 4-8, top_priorities max 3 items, blockers max 2 items, recent_wins max 2 items, cross_track_priorities max 8 items.`;
 }

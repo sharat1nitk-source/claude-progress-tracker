@@ -130,11 +130,13 @@ class ConversationProcessor {
       const data = await this.driveAPI.downloadJSON(folderId, 'kb-settings.json');
       return {
         archivedTracks: new Set(data?.archivedTracks || []),
+        analysisArchivedTracks: new Set(data?.analysisArchivedTracks || []),
         trackPriorities: data?.trackPriorities || {},
         trackNotes: data?.trackNotes || {},
+        sectionNotes: data?.sectionNotes || {},
       };
     } catch {
-      return { archivedTracks: new Set(), trackPriorities: {}, trackNotes: {} };
+      return { archivedTracks: new Set(), analysisArchivedTracks: new Set(), trackPriorities: {}, trackNotes: {}, sectionNotes: {} };
     }
   }
 
@@ -378,11 +380,14 @@ class ConversationProcessor {
 
           const { trackDocuments, synthesis } = await this.builder.build(allResults, exportData.projects);
 
-          // Filter out archived tracks, load user-set track priorities
-          const { archivedTracks: archivedSet, trackPriorities, trackNotes } = await this.loadTrackSettings(folderId);
+          // Load user settings: archives, priorities, notes
+          const { archivedTracks: archivedSet, analysisArchivedTracks: analysisSet, trackPriorities, trackNotes, sectionNotes } = await this.loadTrackSettings(folderId);
           const activeTrackDocs = trackDocuments.filter(t => !archivedSet.has(t.slug));
           if (archivedSet.size > 0) {
-            console.log(`Excluded ${trackDocuments.length - activeTrackDocs.length} archived track(s)`);
+            console.log(`Excluded ${trackDocuments.length - activeTrackDocs.length} view-archived track(s)`);
+          }
+          if (analysisSet.size > 0) {
+            console.log(`${analysisSet.size} analysis-archived track(s) — frozen, not updated in digest`);
           }
           if (Object.keys(trackPriorities).length > 0) {
             console.log(`Track priorities: ${JSON.stringify(trackPriorities)}`);
@@ -398,7 +403,7 @@ class ConversationProcessor {
 
           const priorities = await this.loadPriorities(folderId);
           const digest = await this.digestGenerator.generate(
-            trimmedTrackDocs, synthesis, priorities, memories, trackPriorities, trackNotes
+            trimmedTrackDocs, synthesis, priorities, memories, trackPriorities, trackNotes, analysisSet, sectionNotes
           );
 
           // 7. Bundle all output into single file (PWA pre-creates via OAuth)
