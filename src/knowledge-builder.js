@@ -84,10 +84,12 @@ class KnowledgeBuilder {
         allPending.push(t);
       }
       for (const b of (knowledge.blockers || [])) {
-        allBlockers.push({ text: b, convName, date });
+        const text = typeof b === 'string' ? b : (b.text || b.description || b.blocker || b.issue || JSON.stringify(b));
+        allBlockers.push({ text, convName, date });
       }
       for (const b of (knowledge.blockers_resolved || [])) {
-        allResolvedBlockers.push({ text: b, convName, date });
+        const text = typeof b === 'string' ? b : (b.text || b.description || b.blocker || b.issue || JSON.stringify(b));
+        allResolvedBlockers.push({ text, convName, date });
       }
       for (const q of knowledge.open_questions) {
         allQuestions.push(q);
@@ -104,18 +106,23 @@ class KnowledgeBuilder {
     const resolvedTexts = new Set(allResolvedBlockers.map(b => b.text.trim().toLowerCase()));
     let activeBlockers = allBlockers.filter(b => !resolvedTexts.has(b.text.trim().toLowerCase()));
 
-    // Near-match dedup: remove blockers with 70%+ text overlap
+    // Helper: check if two texts have 70%+ overlap
+    const nearMatch = (a, b) => {
+      if (a === b) return true;
+      const minLen = Math.min(a.length, b.length);
+      const overlapThreshold = Math.floor(minLen * 0.7);
+      return a.includes(b.substring(0, overlapThreshold)) ||
+             b.includes(a.substring(0, overlapThreshold));
+    };
+
+    // Near-match dedup: remove blockers with 70%+ text overlap with resolved or other actives
     const dedupedBlockers = [];
+    const resolvedLower = [...resolvedTexts];
     for (const b of activeBlockers) {
       const bLower = b.text.trim().toLowerCase();
-      const isDup = dedupedBlockers.some(existing => {
-        const exLower = existing.text.trim().toLowerCase();
-        if (exLower === bLower) return true;
-        const minLen = Math.min(exLower.length, bLower.length);
-        const overlapThreshold = Math.floor(minLen * 0.7);
-        return exLower.includes(bLower.substring(0, overlapThreshold)) ||
-               bLower.includes(exLower.substring(0, overlapThreshold));
-      });
+      const isDup = dedupedBlockers.some(existing =>
+        nearMatch(existing.text.trim().toLowerCase(), bLower)
+      ) || resolvedLower.some(rText => nearMatch(rText, bLower));
       if (!isDup) dedupedBlockers.push(b);
     }
 
@@ -142,7 +149,10 @@ class KnowledgeBuilder {
     // Check if ANY active blocker comes from a recent conversation (vs stale/historical)
     const recentBlockerTexts = new Set();
     for (const { knowledge } of recentConvs) {
-      for (const b of (knowledge.blockers || [])) recentBlockerTexts.add(b.trim().toLowerCase());
+      for (const b of (knowledge.blockers || [])) {
+        const text = typeof b === 'string' ? b : (b.text || b.description || b.blocker || b.issue || JSON.stringify(b));
+        recentBlockerTexts.add(text.trim().toLowerCase());
+      }
     }
     const hasRecentActiveBlockers = activeBlockers.some(b => recentBlockerTexts.has(b.text.trim().toLowerCase()));
 
