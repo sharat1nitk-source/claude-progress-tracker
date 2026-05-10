@@ -224,6 +224,13 @@ class ConversationProcessor {
       // Auto-queue: discover latest export ZIP and add to queue
       if (this.config.autoQueueEmail) {
         await this.autoQueueLatestZip(queue);
+      } else if (this.config.forceReprocess && queue.queue.length > 0) {
+        // Force reprocess without auto-queue: re-queue all items
+        for (const item of queue.queue) {
+          item.status = 'pending';
+          item.processedAt = null;
+        }
+        console.log(`  Force re-queued ${queue.queue.length} item(s) for reprocessing`);
       }
 
       if (queue.queue.length === 0) {
